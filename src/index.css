@@ -1,0 +1,43 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; }
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background-color: #eef1f5;
+    color: #111827;
+    min-height: 100vh;
+  }
+}
+
+@layer components {
+  .input-base {
+    @apply w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:border-primary-600;
+  }
+  .btn-primary {
+    @apply bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed;
+  }
+  .btn-secondary {
+    @apply bg-white hover:bg-gray-50 text-gray-700 font-semibold rounded-lg px-4 py-2 text-sm border border-gray-300 transition-colors;
+  }
+  .btn-danger {
+    @apply bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors;
+  }
+  .btn-warning {
+    @apply bg-amber-500 hover:bg-amber-600 text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors;
+  }
+  .card {
+    @apply bg-white rounded-xl border border-gray-100 p-4;
+  }
+  .badge-salida {
+    @apply inline-block px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800;
+  }
+  .badge-recojo {
+    @apply inline-block px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800;
+  }
+  .badge-sup {
+    @apply inline-block px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800;
+  }
+}
