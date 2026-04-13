@@ -35,8 +35,8 @@ export const ALLP: { ag: string; p: string }[] = AGK.flatMap(ag =>
 
 export const RUTAS: Record<string, FilaRuta[]> = {
   'R-1': [{ l: 1, c: 1 }, { l: 2, c: 1 }, { l: 3, c: 1 }],
-  'R-2': [{ l: 15, c: 1 }, { l: 7, c: 1 }, { l: 7, c: 2 }, { l: 7, c: 3 }, { l: 1, c: 2 }, { l: 8, c: 1 }, { lbl: 'VIVERO' }],
-  'R-3': [{ l: 2, c: 2 }, { l: 11, c: 1 }, { l: 9, c: 2 }, { l: 9, c: 1 }],
+  'R-2': [{ l: 15, c: 1 }, { l: 7, c: 1 }, { l: 7, c: 2 }, { l: 7, c: 3 }, { l: 1, c: 2 }, { l: 8, c: 1 }, { lbl: 'VIVERO' }, { l: 2, c: 2 }],
+  'R-3': [{ l: 11, c: 1 }, { l: 9, c: 2 }, { l: 9, c: 1 }],
   'R-4': [{ l: 12, c: 2 }, { l: 12, c: 1 }, { l: 12, c: 3 }, { l: 11, c: 2 }, { l: 11, c: 3 }, { l: 11, c: 4 }],
   'R-5': [{ l: 14, c: 1 }, { l: 16, c: 2 }, { l: 16, c: 1 }, { l: 4, c: 3 }, { l: 4, c: 2 }, { l: 3, c: 3 }],
   'R-6': [{ l: 4, c: 1 }, { l: 6, c: 2 }, { l: 10, c: 1 }, { l: 6, c: 1 }, { l: 3, c: 2 }, { lbl: 'BASE ACOPIO' }],
