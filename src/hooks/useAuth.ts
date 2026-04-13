@@ -13,6 +13,7 @@ export function useAuth() {
         .select('*')
         .eq('id', uid)
         .single()
+
       if (error) throw error
       setUsuario(data)
     } catch {
@@ -23,8 +24,7 @@ export function useAuth() {
   }
 
   useEffect(() => {
-    // Verificar sesión en caché primero (instantáneo)
-    const session = supabase.auth.getSession().then(({ data }) => {
+    supabase.auth.getSession().then(({ data }) => {
       if (data.session?.user) {
         loadUsuario(data.session.user.id)
       } else {
@@ -32,7 +32,9 @@ export function useAuth() {
       }
     })
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' && session?.user) {
         loadUsuario(session.user.id)
       } else if (event === 'SIGNED_OUT') {
