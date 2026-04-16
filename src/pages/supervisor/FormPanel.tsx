@@ -80,104 +80,7 @@ export default function FormPanel({ formState, onBack, onSaved }: Props) {
       fData, editKey || undefined
     )
     onSaved(`Guardado — ${total2} personas`)
-  }
-
-  const exportarResumen = () => {
-    if (!usuario) return
-    const fecha = new Date().toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' })
-    const hora = new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })
-    const color = tipo === 'SALIDA' ? '#d97706' : '#1a7a3c'
-    const tipoLabel = tipo === 'SALIDA' ? 'SALIDA' : 'RECOJO'
-
-    // Construir filas con datos por agrupador y paradero
-    const resumenFilas: { agrupador: string; paradero: string; cantidad: number }[] = []
-    Object.keys(AGR).forEach(ag => {
-      AGR[ag].forEach(p => {
-        let cant = 0
-        Object.keys(RUTAS).forEach(r => {
-          RUTAS[r].forEach(f => {
-            const rid = getRid(r, f)
-            cant += fData[getCellKey(rid, p)] || 0
-          })
-        })
-        if (cant > 0) resumenFilas.push({ agrupador: ag, paradero: p, cantidad: cant })
-      })
-    })
-
-    // Agrupar por agrupador
-    const grupos: Record<string, { paradero: string; cantidad: number }[]> = {}
-    resumenFilas.forEach(f => {
-      if (!grupos[f.agrupador]) grupos[f.agrupador] = []
-      grupos[f.agrupador].push({ paradero: f.paradero, cantidad: f.cantidad })
-    })
-
-    const totalGeneral = resumenFilas.reduce((a, f) => a + f.cantidad, 0)
-
-    const tablas = Object.entries(grupos).map(([ag, filas]) => {
-      const subtotal = filas.reduce((a, f) => a + f.cantidad, 0)
-      const rows = filas.map(f => `
-        <tr>
-          <td style="padding:7px 12px;border-bottom:1px solid #f0f0f0">${f.paradero}</td>
-          <td style="padding:7px 12px;border-bottom:1px solid #f0f0f0;text-align:center;font-weight:700">${f.cantidad}</td>
-        </tr>`).join('')
-      return `
-        <div style="margin-bottom:20px">
-          <div style="background:${color}18;border-left:4px solid ${color};padding:6px 12px;margin-bottom:6px;border-radius:4px">
-            <span style="font-weight:700;font-size:13px;color:${color}">${ag}</span>
-            <span style="font-size:12px;color:#666;margin-left:8px">${subtotal} personas</span>
-          </div>
-          <table style="width:100%;border-collapse:collapse;font-size:13px">
-            <thead>
-              <tr style="background:#f8f8f8">
-                <th style="padding:7px 12px;text-align:left;font-weight:600;color:#555">Paradero</th>
-                <th style="padding:7px 12px;text-align:center;font-weight:600;color:#555">Personas</th>
-              </tr>
-            </thead>
-            <tbody>${rows}</tbody>
-          </table>
-        </div>`
-    }).join('')
-
-    const html = `
-      <html><head><meta charset="utf-8">
-      <style>
-        body { font-family: Arial, sans-serif; padding: 32px; max-width: 620px; margin: 0 auto; background: white; color: #111; }
-        @media print { body { padding: 16px; } }
-      </style></head>
-      <body>
-        <div style="border-bottom:3px solid ${color};padding-bottom:12px;margin-bottom:20px">
-          <h1 style="font-size:20px;font-weight:900;margin:0 0 4px;color:#111">PROGRAMACIÓN DE TRANSPORTE</h1>
-          <div style="font-size:12px;color:#666;line-height:1.9">
-            <b>Tipo:</b> ${tipoLabel} &nbsp;|&nbsp;
-            <b>Horario:</b> ${hor} &nbsp;|&nbsp;
-            <b>Área:</b> ${area}<br>
-            <b>Supervisor:</b> ${usuario.nombre} &nbsp;|&nbsp;
-            <b>Fecha:</b> ${fecha} &nbsp;|&nbsp;
-            <b>Generado:</b> ${hora}
-          </div>
-        </div>
-        <div style="background:${color};color:white;padding:10px 16px;border-radius:8px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center">
-          <span style="font-size:15px;font-weight:700">${tipoLabel} — ${area}</span>
-          <span style="font-size:22px;font-weight:900">${totalGeneral} personas</span>
-        </div>
-        ${resumenFilas.length === 0
-          ? '<p style="color:#aaa;text-align:center;padding:32px">Sin datos registrados</p>'
-          : tablas
-        }
-        ${resumenFilas.length > 0 ? `
-        <div style="border-top:2px solid ${color};margin-top:16px;padding-top:12px;display:flex;justify-content:space-between;align-items:center">
-          <span style="font-weight:700;font-size:14px">TOTAL GENERAL</span>
-          <span style="font-weight:900;font-size:20px;color:${color}">${totalGeneral}</span>
-        </div>` : ''}
-      </body></html>`
-
-    const win = window.open('', '_blank', 'width=720,height=900')
-    if (win) {
-      win.document.write(html)
-      win.document.close()
-      win.focus()
-      setTimeout(() => win.print(), 600)
-    }
+    onBack()
   }
 
   if (!usuario) return null
@@ -314,14 +217,7 @@ export default function FormPanel({ formState, onBack, onSaved }: Props) {
       </div>
 
       <div className="flex gap-2">
-        <button
-          onClick={exportarResumen}
-          disabled={total === 0}
-          className="flex-1 btn-secondary py-3 text-sm disabled:opacity-40"
-        >
-          📋 Exportar resumen
-        </button>
-        <button onClick={guardar} disabled={bloq} className="flex-1 btn-primary py-3 text-sm">
+        <button onClick={guardar} disabled={bloq} className="w-full btn-primary py-3 text-sm">
           {bloq ? '🔒 Día cerrado' : 'Guardar'}
         </button>
       </div>
