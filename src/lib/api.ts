@@ -4,6 +4,7 @@ import type {
   ProgramacionDetalle,
   Database,
 } from './database.types'
+import type { ProgramacionWithData } from '../types'
 import { ALLP } from '../utils/constants'
 
 // ── AUTH ─────────────────────────────────────────────────────────────────────
@@ -15,11 +16,21 @@ export async function signIn(email: string, password: string) {
 }
 
 export async function signOut() {
-  await supabase.auth.signOut()
+  try {
+    await supabase.auth.signOut()
+  } finally {
+    try {
+      localStorage.removeItem('trp_idx')
+      sessionStorage.clear()
+    } catch {
+      // ignorar
+    }
+  }
 }
 
 export async function getSession() {
-  const { data } = await supabase.auth.getSession()
+  const { data, error } = await supabase.auth.getSession()
+  if (error) throw error
   return data.session
 }
 
@@ -91,7 +102,7 @@ export async function setDiaEstado(
   const payload: Database['public']['Tables']['dias']['Insert'] = {
     fecha,
     estado,
-    cerrado_por: estado === 'cerrado' ? adminId : null,
+    cerrado_por: estado === 'cerrado' ? adminId || null : null,
     cerrado_at: estado === 'cerrado' ? new Date().toISOString() : null,
   }
 
@@ -146,6 +157,52 @@ export async function getProgramacionDetalle(programacionId: string) {
   return data as ProgramacionDetalle[]
 }
 
+function detalleToData(detalle: ProgramacionDetalle[]): Record<string, number> {
+  const data: Record<string, number> = {}
+
+  detalle.forEach((row) => {
+    const comedor = Number(row.comedor ?? 0)
+
+    let rutaBase = row.ruta || ''
+    const partesRuta = rutaBase.split('-')
+    if (partesRuta.length > 2) {
+      rutaBase = partesRuta.slice(0, 2).join('-')
+    }
+
+    const rutaTxt = rutaBase.replace('-', '_')
+    const rid = row.fila_label
+      ? `${rutaTxt}_${row.fila_label}`
+      : `${rutaTxt}_${row.lote ?? 0}_${comedor > 0 ? comedor : 1}`
+
+    const ck = `${rid}||${row.paradero}`
+    data[ck] = row.cantidad ?? 0
+  })
+
+  return data
+}
+
+export async function getAllProgs(fecha: string): Promise<ProgramacionWithData[]> {
+  const progs = await getAllProgramaciones(fecha)
+
+  const enriched = await Promise.all(
+    (progs || []).map(async (p: any) => {
+      const detalle = await getProgramacionDetalle(p.id)
+
+      return {
+        key: p.id,
+        user: p.usuarios?.username || '',
+        tipo: p.tipo,
+        hor: p.horario_label,
+        area: p.area,
+        total: p.total || 0,
+        data: detalleToData(detalle),
+      } as ProgramacionWithData
+    })
+  )
+
+  return enriched
+}
+
 export async function saveProgramacion(
   usuarioId: string,
   fecha: string,
@@ -153,31 +210,90 @@ export async function saveProgramacion(
   horarioId: string,
   horarioLabel: string,
   area: string,
-  fData: Record<string, number>
+  fData: Record<string, number>,
+  editKey?: string | null  // ID del registro que se está editando
 ): Promise<Programacion> {
-  const upsertPayload: Database['public']['Tables']['programaciones']['Insert'] = {
-    usuario_id: usuarioId,
-    fecha,
-    tipo,
-    horario_id: horarioId,
-    horario_label: horarioLabel,
-    area,
+  const total = Object.values(fData).reduce((a, b) => a + (b || 0), 0)
+
+  let progId: string
+
+  if (editKey) {
+    // ── EDICIÓN: verificar que el nuevo horario no esté usado por otra programación ──
+    const { data: existing, error: checkErr } = await supabase
+      .from('programaciones')
+      .select('id')
+      .eq('usuario_id', usuarioId)
+      .eq('fecha', fecha)
+      .eq('tipo', tipo)
+      .eq('horario_id', horarioId)
+      .eq('area', area)
+      .neq('id', editKey)  // excluir el registro actual
+      .maybeSingle()
+
+    if (checkErr) throw checkErr
+
+    if (existing) {
+      throw new Error(`Ya existe una programación para ese horario y área`)
+    }
+
+    // Actualizar el registro existente
+    const { data: prog, error: updErr } = await supabase
+      .from('programaciones')
+      .update({
+        horario_id: horarioId,
+        horario_label: horarioLabel,
+        area,
+        total,
+      })
+      .eq('id', editKey)
+      .select()
+      .single()
+
+    if (updErr) throw updErr
+    progId = prog.id
+
+  } else {
+    // ── NUEVA: verificar que no exista ya ese horario ──
+    const { data: existing, error: checkErr } = await supabase
+      .from('programaciones')
+      .select('id')
+      .eq('usuario_id', usuarioId)
+      .eq('fecha', fecha)
+      .eq('tipo', tipo)
+      .eq('horario_id', horarioId)
+      .eq('area', area)
+      .maybeSingle()
+
+    if (checkErr) throw checkErr
+
+    if (existing) {
+      throw new Error(`Ya existe una programación para ese horario y área`)
+    }
+
+    // Insertar nuevo registro
+    const { data: prog, error: insProgErr } = await supabase
+      .from('programaciones')
+      .insert({
+        usuario_id: usuarioId,
+        fecha,
+        tipo,
+        horario_id: horarioId,
+        horario_label: horarioLabel,
+        area,
+        total,
+      })
+      .select()
+      .single()
+
+    if (insProgErr) throw insProgErr
+    progId = prog.id
   }
 
-  const { data: prog, error: progErr } = await supabase
-    .from('programaciones')
-    .upsert(upsertPayload, {
-      onConflict: 'usuario_id,fecha,tipo,horario_id,area',
-    })
-    .select()
-    .single()
-
-  if (progErr) throw progErr
-
+  // ── Reemplazar detalle ──
   const { error: delErr } = await supabase
     .from('programacion_detalle')
     .delete()
-    .eq('programacion_id', prog.id)
+    .eq('programacion_id', progId)
 
   if (delErr) throw delErr
 
@@ -187,16 +303,28 @@ export async function saveProgramacion(
       .map(([ck, cantidad]) => {
         const [ridPart, paradero] = ck.split('||')
         const parts = ridPart.split('_')
-        const ruta = `${parts[0]}-${parts[1]}`
-        const resto = parts.slice(2)
-
-        const filaLabel = Number.isNaN(Number(resto[0])) ? resto[0] : null
-        const lote = filaLabel ? null : Number(resto[0] ?? 0)
-        const comedor = filaLabel ? null : Number(resto[1] ?? 0)
         const agrupador = ALLP.find((x) => x.p === paradero)?.ag ?? ''
 
+        let ruta = ''
+        let lote: number | null = null
+        let comedor: number | null = null
+        let filaLabel: string | null = null
+
+        const penultimo = parts[parts.length - 2]
+        const ultimo = parts[parts.length - 1]
+        const tieneLoteComedor = /^\d+$/.test(penultimo ?? '') && /^\d+$/.test(ultimo ?? '')
+
+        if (tieneLoteComedor) {
+          lote = Number(penultimo)
+          comedor = Number(ultimo)
+          ruta = parts.slice(0, parts.length - 2).join('-')
+        } else {
+          filaLabel = parts[parts.length - 1] || null
+          ruta = parts.slice(0, parts.length - 1).join('-')
+        }
+
         return {
-          programacion_id: prog.id,
+          programacion_id: progId,
           ruta,
           lote,
           comedor,
@@ -215,7 +343,15 @@ export async function saveProgramacion(
     if (insErr) throw insErr
   }
 
-  return prog as Programacion
+  // Retornar el registro actualizado
+  const { data: final, error: finalErr } = await supabase
+    .from('programaciones')
+    .select('*')
+    .eq('id', progId)
+    .single()
+
+  if (finalErr) throw finalErr
+  return final as Programacion
 }
 
 export async function deleteProgramacion(id: string) {

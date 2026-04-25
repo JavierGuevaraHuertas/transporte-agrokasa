@@ -18,42 +18,58 @@ export interface FormState {
 
 export default function SupervisorApp() {
   const [view, setView] = useState<SupView>('menu')
-  const [formState, setFormState] = useState<FormState>({ tipo: 'SALIDA', key: null, hor: null, area: null })
+  const [formState, setFormState] = useState<FormState>({
+    tipo: 'SALIDA',
+    key: null,
+    hor: null,
+    area: null,
+  })
   const [refresh, setRefresh] = useState(0)
   const { toast, showToast, clearToast } = useToast()
 
-  const goForm = (tipo: TipoProgram, key: string | null, hor: string | null, area: string | null) => {
+  const goForm = (
+    tipo: TipoProgram,
+    key: string | null,
+    hor: string | null,
+    area: string | null
+  ) => {
     setFormState({ tipo, key, hor, area })
     setView('form')
   }
 
   const onSaved = (msg: string) => {
     showToast(msg, 'ok')
-    setRefresh(r => r + 1)
+    setRefresh((r) => r + 1)
     setView('lista')
   }
 
   return (
     <div className="flex flex-col min-h-screen bg-[#eef1f5]">
       <Topbar />
+
       <div className="flex-1 overflow-auto">
         <div className="max-w-2xl mx-auto p-3">
           {view === 'menu' && (
             <MenuPanel
               refresh={refresh}
-              onGoLista={(tipo) => { setFormState(s => ({ ...s, tipo })); setView('lista') }}
+              onGoLista={(tipo) => {
+                setFormState((s) => ({ ...s, tipo }))
+                setView('lista')
+              }}
               onNewDirect={(tipo) => goForm(tipo, null, null, null)}
             />
           )}
+
           {view === 'lista' && (
             <ListaPanel
               tipo={formState.tipo}
+              refresh={refresh}
               onBack={() => setView('menu')}
               onNew={() => goForm(formState.tipo, null, null, null)}
               onEdit={(key, tipo, hor, area) => goForm(tipo, key, hor, area)}
-              refresh={refresh}
             />
           )}
+
           {view === 'form' && (
             <FormPanel
               formState={formState}
@@ -63,7 +79,15 @@ export default function SupervisorApp() {
           )}
         </div>
       </div>
-      {toast && <Toast key={toast.id} message={toast.message} type={toast.type} onDone={clearToast} />}
+
+      {toast && (
+        <Toast
+          key={toast.id}
+          message={toast.message}
+          type={toast.type}
+          onDone={clearToast}
+        />
+      )}
     </div>
   )
 }

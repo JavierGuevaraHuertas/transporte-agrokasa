@@ -107,7 +107,7 @@ export type Database = {
         ]
       }
 
-      programaciones: {
+            programaciones: {
         Row: {
           id: string
           usuario_id: string
@@ -116,7 +116,9 @@ export type Database = {
           horario_id: string
           horario_label: string
           area: string
+          total: number
           created_at: string | null
+          updated_at: string | null
         }
         Insert: {
           id?: string
@@ -126,7 +128,9 @@ export type Database = {
           horario_id: string
           horario_label: string
           area: string
+          total?: number
           created_at?: string | null
+          updated_at?: string | null
         }
         Update: {
           id?: string
@@ -136,7 +140,9 @@ export type Database = {
           horario_id?: string
           horario_label?: string
           area?: string
+          total?: number
           created_at?: string | null
+          updated_at?: string | null
         }
         Relationships: [
           {

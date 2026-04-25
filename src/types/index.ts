@@ -14,7 +14,6 @@ export interface Programacion {
   hor: string
   area: string
   total: number
-  ts: number
 }
 
 export interface ProgramacionWithData extends Programacion {
