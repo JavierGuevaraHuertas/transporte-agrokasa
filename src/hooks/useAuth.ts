@@ -6,12 +6,7 @@ export function useAuth() {
   const [usuario, setUsuario] = useState<Usuario | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const clearState = () => {
-    setUsuario(null)
-    setLoading(false)
-  }
-
-  const loadUsuario = async (uid: string) => {
+  const loadUsuario = async (uid: string): Promise<Usuario | null> => {
     const { data, error } = await supabase
       .from('usuarios')
       .select('*')
@@ -19,81 +14,53 @@ export function useAuth() {
       .single()
 
     if (error) throw error
-    setUsuario(data)
+    return data
   }
 
   useEffect(() => {
     let active = true
-    let resolved = false
 
-    const safe = (fn: () => void) => {
-      if (active) fn()
-    }
-
-    const finish = () => {
-      resolved = true
-      safe(() => setLoading(false))
-    }
-
-    const init = async () => {
-      try {
-        const { data, error } = await supabase.auth.getSession()
-
-        if (error) throw error
-        if (!active || resolved) return
-
-        const session = data.session
-
-        if (!session?.user) {
-          clearState()
-          resolved = true
-          return
-        }
-
-        await loadUsuario(session.user.id)
-        finish()
-      } catch (e) {
-        console.error('Error inicializando auth:', e)
-        resolved = true
-        safe(() => clearState())
-      }
-    }
-
-    void init()
-
+    // Suscribirse a cambios de sesión PRIMERO para no perder eventos
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!active || resolved) return
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (!active) return
 
       if (!session?.user) {
-        resolved = true
-        safe(() => clearState())
+        setUsuario(null)
+        setLoading(false)
         return
       }
 
-      setTimeout(async () => {
-        try {
-          if (!active || resolved) return
-          await loadUsuario(session.user.id)
-          finish()
-        } catch (e) {
-          console.error('Error en onAuthStateChange:', e)
-          resolved = true
-          safe(() => clearState())
-        }
-      }, 0)
+      try {
+        const data = await loadUsuario(session.user.id)
+        if (!active) return
+        setUsuario(data)
+        setLoading(false)
+      } catch (e) {
+        console.error('Error en onAuthStateChange:', e)
+        if (!active) return
+        setUsuario(null)
+        setLoading(false)
+      }
     })
 
-    const timeoutId = window.setTimeout(() => {
-      if (resolved) return
-      resolved = true
-      safe(() => setLoading(false))
-    }, 10000)
+    // Verificar sesión inicial
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (!active) return
+      if (error || !data.session?.user) {
+        setUsuario(null)
+        setLoading(false)
+      }
+      // Si hay sesión, onAuthStateChange ya la maneja
+    }).catch(() => {
+      if (!active) return
+      setUsuario(null)
+      setLoading(false)
+    })
 
     return () => {
       active = false
-      clearTimeout(timeoutId)
       subscription.unsubscribe()
     }
   }, [])
