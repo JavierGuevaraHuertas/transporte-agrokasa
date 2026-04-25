@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo } from 'react'
 import * as XLSX from 'xlsx-js-style'
 import Modal from '../../components/Modal'
 import { ALLP, AGK, AGR, RUTAS, getRid } from '../../utils/constants'
-import type { ProgramacionWithData } from '../../types'
 import {
   getAllUsuarios,
   getDia,
@@ -194,7 +193,6 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
     tdLFn: (e?: string) => string,
     parHeadersFn: (thFn: (e?: string) => string) => string
   ) => {
-    const tipoLabel = filtroTipo === 'SALIDA' ? 'SALIDA' : 'INGRESO'
     const { grupos, totPar, grandTotal } = buildReporteData(filtroTipo)
 
     const agHeaders = AGK.map(
@@ -227,44 +225,6 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
         return `<td style="${tdFn('font-weight:700;color:#14532d;background:#bbf7d0;' + bl)}">${v || ''}</td>`
       }).join('')}
       <td style="${tdFn('font-weight:800;color:#14532d;background:#86efac;border-left:2px solid #aaa')}">${grandTotal}</td>
-    </tr>`
-
-    const subParHeaders = ALLP.map(({ ag, p }, i) => {
-      const bl = i > 0 && ALLP[i - 1].ag !== ag ? 'border-left:2px solid #0f4f28;' : ''
-      return `<th style="${thFn(bl + 'width:26px;height:70px;padding:0;vertical-align:middle;text-align:center')}">
-        <div style="display:table;width:26px;height:70px;">
-          <div style="display:table-cell;vertical-align:middle;text-align:center;">
-            <span style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:${fontSize};line-height:1.2;word-break:break-word;white-space:normal;width:14px;display:inline-block;text-align:center;">${p}</span>
-          </div>
-        </div>
-      </th>`
-    }).join('')
-
-    const subRows = Object.entries(grupos).map(([_hor, filas]) => {
-      const horTotal = filas.reduce((a, f) => a + f.total, 0)
-      const horPar: Record<string, number> = {}
-      ALLP.forEach(({ p }) => { horPar[p] = 0 })
-      filas.forEach((f) => ALLP.forEach(({ p }) => { horPar[p] += f.data[p] || 0 }))
-
-      return `<tr style="background:#f0fdf4">
-        <td style="${tdLFn('font-weight:700;color:#065f46')}">${filas[0].hor}</td>
-        <td style="${tdFn('font-weight:700;color:#065f46')}">${horTotal}</td>
-        ${ALLP.map(({ ag, p }, i) => {
-          const v = horPar[p] || 0
-          const bl = i > 0 && ALLP[i - 1].ag !== ag ? 'border-left:2px solid #6ee7b7;' : ''
-          return `<td style="${tdFn(bl + (v ? 'font-weight:600;color:#065f46;' : 'color:#d1d5db;'))}">${v || ''}</td>`
-        }).join('')}
-      </tr>`
-    }).join('')
-
-    const subTotalRow = `<tr style="background:#bbf7d0">
-      <td style="${tdLFn('font-weight:800;color:#14532d')}">TOTAL</td>
-      <td style="${tdFn('font-weight:800;color:#14532d')}">${grandTotal}</td>
-      ${ALLP.map(({ ag, p }, i) => {
-        const v = totPar[p] || 0
-        const bl = i > 0 && ALLP[i - 1].ag !== ag ? 'border-left:2px solid #6ee7b7;' : ''
-        return `<td style="${tdFn('font-weight:700;color:#14532d;' + bl)}">${v || ''}</td>`
-      }).join('')}
     </tr>`
 
     return `
@@ -333,60 +293,8 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
     const tipoLabel = filtroTipo === 'SALIDA' ? 'SALIDA' : 'INGRESO'
     const { grupos, totPar, grandTotal } = buildReporteData(filtroTipo)
 
-    const allFiltrado = all.filter((m) => m.tipo === filtroTipo)
-    const hors = [...new Set(allFiltrado.map((m) => m.hor))]
-    const areasList = [...new Set(allFiltrado.map((m) => m.area))]
-
-    type FilaVis = { ruta: string; lote: string; com: string; lbl: string; rid: string; vals: Record<string, number>; rowTotal: number }
-
-    const horFilas: Record<string, FilaVis[]> = {}
-    hors.forEach((hor) => {
-      const progsHor = allFiltrado.filter((m) => m.hor === hor)
-      horFilas[hor] = []
-
-      Object.entries(RUTAS).forEach(([ruta, filas]) => {
-        filas.forEach((fila) => {
-          const rid = getRid(ruta, fila)
-          const vals: Record<string, number> = {}
-          let rowTotal = 0
-
-          areasList.forEach((a) => {
-            let s = 0
-            progsHor.filter((m) => m.area === a).forEach((m) => {
-              Object.keys(m.data).forEach((ck) => { if (ck.startsWith(rid + '||')) s += m.data[ck] || 0 })
-            })
-            vals[a] = s
-            rowTotal += s
-          })
-
-          if (rowTotal > 0) {
-            horFilas[hor].push({
-              ruta,
-              lote: fila.lbl ? '' : String(fila.l ?? ''),
-              com: fila.lbl ? '' : String(fila.c ?? ''),
-              lbl: fila.lbl ?? '',
-              rid,
-              vals,
-              rowTotal,
-            })
-          }
-        })
-      })
-    })
-
-    const totArea: Record<string, number> = {}
-    areasList.forEach((a) => { totArea[a] = 0 })
-    let grandTotalRuta = 0
-
-    Object.values(horFilas).forEach((filas) =>
-      filas.forEach((f) => {
-        areasList.forEach((a) => { totArea[a] += f.vals[a] || 0 })
-        grandTotalRuta += f.rowTotal
-      })
-    )
-
     const wb = XLSX.utils.book_new()
-    const GREEN_DARK = '1a7a3c', GREEN_LIGHT = 'd4edda', GREEN_MID = 'bbf7d0', GREEN_PALE = 'f0fdf4', BLUE_PALE = 'eff6ff', WHITE = 'ffffff'
+    const GREEN_DARK = '1a7a3c', GREEN_LIGHT = 'd4edda', GREEN_MID = 'bbf7d0', GREEN_PALE = 'f0fdf4', WHITE = 'ffffff'
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const thStyle = (extra?: any): any => ({ font: { bold: true, color: { rgb: WHITE }, sz: 9 }, fill: { fgColor: { rgb: GREEN_DARK } }, border: { top: { style: 'thin', color: { rgb: '155e30' } }, bottom: { style: 'thin', color: { rgb: '155e30' } }, left: { style: 'thin', color: { rgb: '155e30' } }, right: { style: 'thin', color: { rgb: '155e30' } } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true }, ...extra })
@@ -514,18 +422,6 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
     }).join('')
 
     const totalRow = `<tr style="background:#bbf7d0"><td colspan="4" style="${tdL('font-weight:800;color:#14532d;')}">TOTAL</td><td style="${td('font-weight:800;color:#14532d;')}"> ${grandTotal}</td>${areasList.map((a, i) => { const v = totArea[a] || 0; const bg = i % 2 === 0 ? 'background:#bbf7d0;' : 'background:#a7f3d0;'; return `<td style="${td('font-weight:700;color:#14532d;' + bg)}">${v || ''}</td>` }).join('')}</tr>`
-
-    const subRows = hors.map((hor) => {
-      const filas = horFilas[hor]
-      if (!filas.length) return ''
-      const horTotal = filas.reduce((a, f) => a + f.rowTotal, 0)
-      const horArea: Record<string, number> = {}
-      areasList.forEach((a) => { horArea[a] = 0 })
-      filas.forEach((f) => areasList.forEach((a) => { horArea[a] += f.vals[a] || 0 }))
-      return `<tr style="background:#f0fdf4"><td style="${tdL('font-weight:700;color:#065f46;')}">${hor}</td><td style="${td('font-weight:700;color:#065f46;')}">${horTotal}</td>${areasList.map((a, i) => { const v = horArea[a] || 0; const bg = i % 2 === 0 ? 'background:#f0fdf4;' : 'background:#e8faf0;'; return `<td style="${td(bg + (v ? 'font-weight:600;color:#065f46;' : 'color:#d1d5db;'))}">${v || ''}</td>` }).join('')}</tr>`
-    }).join('')
-
-    const subTotalRow = `<tr style="background:#bbf7d0"><td style="${tdL('font-weight:800;color:#14532d;')}">TOTAL</td><td style="${td('font-weight:800;color:#14532d;')}">${grandTotal}</td>${areasList.map((a, i) => { const v = totArea[a] || 0; const bg = i % 2 === 0 ? 'background:#bbf7d0;' : 'background:#a7f3d0;'; return `<td style="${td('font-weight:700;color:#14532d;' + bg)}">${v || ''}</td>` }).join('')}</tr>`
 
     const areaHeaders = areasList.map((a, i) => `<th style="${th('width:28px;min-width:28px;padding:0;' + (i > 0 ? 'border-left:1px solid #155e30;' : ''))}"><div style="height:110px;display:flex;align-items:center;justify-content:center;"><span style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:9px;line-height:1.3;text-align:center;">${a}</span></div></th>`).join('')
 

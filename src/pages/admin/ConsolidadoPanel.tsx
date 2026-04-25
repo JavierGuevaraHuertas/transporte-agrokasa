@@ -15,22 +15,6 @@ function fp(all: ProgramacionWithData[], hor: string, area: string) {
   )
 }
 
-const thVertical = (key: string, text: string, pi: number, borderLeft = false) => (
-  <th
-    key={key}
-    className={`text-white font-normal ${borderLeft ? 'border-l border-primary-500' : ''} ${
-      pi % 2 === 0 ? 'bg-primary-700' : 'bg-primary-800'
-    }`}
-    style={{ minWidth: '30px', maxWidth: '30px', padding: 0 }}
-  >
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '110px', padding: '4px 2px' }}>
-      <span style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', fontSize: '10px', lineHeight: '1.3', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', maxHeight: '102px', textAlign: 'center' }}>
-        {text}
-      </span>
-    </div>
-  </th>
-)
-
 export default function ConsolidadoPanel({ refresh }: Props) {
   const [sub, setSub] = useState<SubTab>('paraderos')
   const [hor, setHor] = useState('ALL')

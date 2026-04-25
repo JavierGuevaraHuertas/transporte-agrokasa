@@ -1,13 +1,10 @@
 import { signOut } from '../lib/api'
-import { useAuth } from '../hooks/useAuth'
 
 interface TopbarProps {
   title?: string
 }
 
 export default function Topbar({ title = 'Programación de Transporte' }: TopbarProps) {
-  const { usuario } = useAuth()
-
   const handleLogout = async () => {
     try {
       await signOut()
