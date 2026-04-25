@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Usuario } from '../lib/database.types'
 
@@ -6,24 +6,55 @@ export function useAuth() {
   const [usuario, setUsuario] = useState<Usuario | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const loadUsuario = async (uid: string): Promise<Usuario | null> => {
+  async function loadUsuario(uid: string) {
     const { data, error } = await supabase
       .from('usuarios')
       .select('*')
       .eq('id', uid)
-      .single()
+      .maybeSingle()
 
-    if (error) throw error
-    return data
+    if (error) {
+      console.error('Error cargando usuario:', error)
+      return null
+    }
+
+    return data as Usuario | null
   }
 
   useEffect(() => {
     let active = true
 
-    // Suscribirse a cambios de sesión PRIMERO para no perder eventos
+    async function init() {
+      try {
+        const { data } = await supabase.auth.getSession()
+        const session = data.session
+
+        if (!active) return
+
+        if (!session?.user) {
+          setUsuario(null)
+          setLoading(false)
+          return
+        }
+
+        const u = await loadUsuario(session.user.id)
+
+        if (!active) return
+        setUsuario(u)
+      } catch (error) {
+        console.error('Error iniciando auth:', error)
+        if (!active) return
+        setUsuario(null)
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+
+    void init()
+
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!active) return
 
       if (!session?.user) {
@@ -32,31 +63,11 @@ export function useAuth() {
         return
       }
 
-      try {
-        const data = await loadUsuario(session.user.id)
+      void loadUsuario(session.user.id).then((u) => {
         if (!active) return
-        setUsuario(data)
+        setUsuario(u)
         setLoading(false)
-      } catch (e) {
-        console.error('Error en onAuthStateChange:', e)
-        if (!active) return
-        setUsuario(null)
-        setLoading(false)
-      }
-    })
-
-    // Verificar sesión inicial
-    supabase.auth.getSession().then(({ data, error }) => {
-      if (!active) return
-      if (error || !data.session?.user) {
-        setUsuario(null)
-        setLoading(false)
-      }
-      // Si hay sesión, onAuthStateChange ya la maneja
-    }).catch(() => {
-      if (!active) return
-      setUsuario(null)
-      setLoading(false)
+      })
     })
 
     return () => {
