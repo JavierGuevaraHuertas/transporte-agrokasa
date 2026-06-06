@@ -301,7 +301,7 @@ export default function FormPanel({ formState, onBack, onSaved }: Props) {
         </div>
 
         {/* Fecha de programación — solo visible si difiere de hoy */}
-        {esAjusteFecha && !editKey && (
+        {tipo === 'RECOJO' && !editKey && (
           <div className="col-span-2">
             <label className="block text-xs font-semibold text-gray-500 mb-1">
               Fecha de programación
@@ -320,7 +320,7 @@ export default function FormPanel({ formState, onBack, onSaved }: Props) {
               </span>
             </div>
             <p className="text-xs text-amber-600 mt-1">
-              📅 Programando recojo para el {fechaLabel} (domingo no laborable). Ajusta si esta semana es diferente.
+              📅 Programando recojo para el <span className="font-semibold capitalize">{fechaLabel}</span>. Ajusta si es necesario.
             </p>
           </div>
         )}
