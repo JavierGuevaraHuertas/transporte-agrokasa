@@ -95,6 +95,7 @@ export const ALL_AREAS = [
   'Certificacion',
   'Control Biologico',
   'Cosecha Arándano',
+  'Cosecha Palto', 
   'Evaluacion Fitosanitaria Arándano',
   'Evaluacion Fitosanitaria FLM1',
   'Evaluacion Fitosanitaria FLM2',
