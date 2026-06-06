@@ -15,7 +15,7 @@ interface Props {
   refresh: number
   onBack: () => void
   onNew: () => void
-  onEdit: (key: string, tipo: TipoProgram, hor: string, area: string) => void
+  onEdit: (key: string, tipo: TipoProgram, hor: string, area: string, fecha: string) => void
 }
 
 /** Misma lógica que FormPanel: RECOJO en sábado → consultar lunes */
@@ -51,16 +51,40 @@ export default function ListaPanel({ tipo, refresh, onBack, onNew, onEdit }: Pro
       try {
         setLoading(true)
 
-        const [dia, progs] = await Promise.all([
-          getDia(fechaConsulta),
-          getProgramacionesByUser(usuario.id, fechaConsulta),
-        ])
+        // Para RECOJO: buscamos en un rango de fechas y filtramos
+        // por created_at de hoy, así muestra solo las programadas hoy
+        // sin importar para qué fecha de ingreso fueron creadas
+        let allProgs: Programacion[]
+        if (tipo === 'RECOJO') {
+          const todayDate = new Date().toISOString().slice(0, 10)
+          const dates: string[] = []
+          const base = new Date(todayDate + 'T12:00:00')
+          for (let i = 0; i <= 7; i++) {
+            const d = new Date(base)
+            d.setDate(base.getDate() + i)
+            dates.push(d.toISOString().slice(0, 10))
+          }
+          const results = await Promise.all(
+            dates.map((f) => getProgramacionesByUser(usuario.id, f))
+          )
+          // Solo las creadas hoy (ajustando a hora local Perú UTC-5)
+          allProgs = results.flat().filter((p) => {
+            if (!p.created_at) return false
+            const localDate = new Date(p.created_at)
+              .toLocaleDateString('en-CA', { timeZone: 'America/Lima' })
+            return localDate === todayDate
+          })
+        } else {
+          allProgs = await getProgramacionesByUser(usuario.id, fechaConsulta)
+        }
+
+        const dia = await getDia(fechaConsulta)
 
         if (!active) return
 
         const estadoTipo = tipo === 'SALIDA' ? dia?.estado_salida : dia?.estado_recojo
         setBloq(estadoTipo === 'cerrado' || dia?.estado === 'cerrado')
-        setItems(progs.filter((x) => x.tipo === tipo))
+        setItems(allProgs.filter((x) => x.tipo === tipo))
       } catch (e) {
         console.error('Error cargando programaciones:', e)
         if (!active) return
@@ -395,7 +419,7 @@ export default function ListaPanel({ tipo, refresh, onBack, onNew, onEdit }: Pro
             <div key={m.id} className="card border border-gray-100">
               <div className="flex items-center gap-2">
                 <div
-                  onClick={() => onEdit(m.id, m.tipo as TipoProgram, m.horario_id, m.area)}
+                  onClick={() => onEdit(m.id, m.tipo as TipoProgram, m.horario_id, m.area, m.fecha)}
                   className="flex items-center gap-2 flex-1 cursor-pointer"
                 >
                   <span className={m.tipo === 'SALIDA' ? 'badge-salida' : 'badge-recojo'}>
