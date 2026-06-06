@@ -15,12 +15,33 @@ interface Props {
   onSaved: (msg: string) => void
 }
 
+/** Calcula la fecha de programación según tipo y día de la semana.
+ *  Para RECOJO programado en sábado (day=6): se sugiere el lunes siguiente (+2 días)
+ *  porque el domingo normalmente no se labora. El supervisor puede cambiar la fecha
+ *  manualmente en caso de que esa semana sí se trabaje el domingo u otro día. */
+function calcFechaDefault(tipo: string): string {
+  const now = new Date()
+  const day = now.getDay() // 0=dom, 6=sab
+
+  if (tipo === 'RECOJO' && day === 6) {
+    // Sábado → proponer lunes por defecto
+    const lunes = new Date(now)
+    lunes.setDate(now.getDate() + 2)
+    return lunes.toISOString().slice(0, 10)
+  }
+
+  return now.toISOString().slice(0, 10)
+}
+
 export default function FormPanel({ formState, onBack, onSaved }: Props) {
   const { usuario } = useAuth()
   const today = new Date().toISOString().slice(0, 10)
 
   const { tipo, key: editKey, hor: initHor, area: initArea } = formState
   const horList = HOR[tipo]
+
+  // fecha de programación: ajustada automáticamente para RECOJO en sábado
+  const [fechaProgram, setFechaProgram] = useState<string>(() => calcFechaDefault(tipo))
 
   const [areas, setAreas] = useState<string[]>(ALL_AREAS)
   const [hor, setHor] = useState(initHor || horList[0].id)
@@ -29,6 +50,13 @@ export default function FormPanel({ formState, onBack, onSaved }: Props) {
   const [fData, setFData] = useState<Record<string, number>>({})
   const [bloq, setBloq] = useState(false)
   const [saving, setSaving] = useState(false)
+
+  // Recalcular fecha por defecto si cambia el tipo
+  useEffect(() => {
+    if (!editKey) {
+      setFechaProgram(calcFechaDefault(tipo))
+    }
+  }, [tipo, editKey])
 
   useEffect(() => {
     let active = true
@@ -53,13 +81,16 @@ export default function FormPanel({ formState, onBack, onSaved }: Props) {
     }
   }, [usuario, initArea])
 
+  // Verificar si la fecha de programación está bloqueada
   useEffect(() => {
     let active = true
 
-    getDia(today)
+    getDia(fechaProgram)
       .then((dia) => {
         if (!active) return
-        setBloq(dia?.estado === 'cerrado')
+        // Check type-specific estado first, fall back to global estado
+        const estadoTipo = tipo === 'SALIDA' ? dia?.estado_salida : dia?.estado_recojo
+        setBloq(estadoTipo === 'cerrado' || dia?.estado === 'cerrado')
       })
       .catch(() => {
         if (!active) return
@@ -69,7 +100,7 @@ export default function FormPanel({ formState, onBack, onSaved }: Props) {
     return () => {
       active = false
     }
-  }, [today])
+  }, [fechaProgram])
 
   useEffect(() => {
     let active = true
@@ -89,7 +120,6 @@ export default function FormPanel({ formState, onBack, onSaved }: Props) {
         for (const row of detalle) {
           const comedor = Number(row.comedor ?? 0)
 
-          // Normalizar ruta: buscar en RUTAS tal cual viene, o recortar si tiene sufijo extra
           let rutaBase = row.ruta || ''
           if (!RUTAS[rutaBase]) {
             const partes = rutaBase.split('-')
@@ -104,20 +134,17 @@ export default function FormPanel({ formState, onBack, onSaved }: Props) {
           let rid = ''
 
           if (row.fila_label) {
-            // Fila con label (ej: VIVERO, BASE ACOPIO)
             const filaMatch = filasRuta.find((f) => f.lbl === row.fila_label)
             if (filaMatch) {
               rid = getRid(rutaBase, filaMatch)
             }
           } else {
-            // Fila normal: buscar por lote + comedor
             const filaMatch = filasRuta.find(
               (f) => f.l === row.lote && f.c === comedor
             )
             if (filaMatch) {
               rid = getRid(rutaBase, filaMatch)
             } else {
-              // Fallback: construir con getRid pasando los valores directos
               rid = getRid(rutaBase, { l: row.lote ?? 0, c: comedor })
             }
           }
@@ -139,7 +166,7 @@ export default function FormPanel({ formState, onBack, onSaved }: Props) {
     void cargarDetalle()
 
     return () => {
-      active = false
+      active = active
     }
   }, [editKey])
 
@@ -189,13 +216,13 @@ export default function FormPanel({ formState, onBack, onSaved }: Props) {
 
       await saveProgramacion(
         usuario.id,
-        today,
+        fechaProgram,   // ← usa la fecha de programación (puede ser lunes si es sábado)
         tipo,
         hor,
         horarioSel?.label || hor,
         area,
         fData,
-        editKey  // pasar el id para edición
+        editKey
       )
 
       onSaved(`Guardado — ${total} personas`)
@@ -210,6 +237,15 @@ export default function FormPanel({ formState, onBack, onSaved }: Props) {
   }
 
   if (!usuario) return null
+
+  // Etiqueta para mostrar la fecha de programación al usuario
+  const fechaLabel = new Date(fechaProgram + 'T12:00:00').toLocaleDateString('es-PE', {
+    weekday: 'long',
+    day: '2-digit',
+    month: 'long',
+  })
+
+  const esAjusteFecha = fechaProgram !== today
 
   return (
     <div>
@@ -263,6 +299,31 @@ export default function FormPanel({ formState, onBack, onSaved }: Props) {
             ))}
           </select>
         </div>
+
+        {/* Fecha de programación — solo visible si difiere de hoy */}
+        {esAjusteFecha && !editKey && (
+          <div className="col-span-2">
+            <label className="block text-xs font-semibold text-gray-500 mb-1">
+              Fecha de programación
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={fechaProgram}
+                min={today}
+                onChange={(e) => setFechaProgram(e.target.value || today)}
+                disabled={bloq || saving}
+                className="input-base flex-1"
+              />
+              <span className="text-xs text-blue-600 font-medium capitalize whitespace-nowrap">
+                {fechaLabel}
+              </span>
+            </div>
+            <p className="text-xs text-amber-600 mt-1">
+              📅 Programando recojo para el {fechaLabel} (domingo no laborable). Ajusta si esta semana es diferente.
+            </p>
+          </div>
+        )}
 
         <div className="col-span-2 bg-green-50 rounded-lg px-3 py-2 flex justify-between items-center">
           <span className="text-xs font-semibold text-green-700">Total personas</span>

@@ -6,6 +6,7 @@ import {
   getAllUsuarios,
   getDia,
   setDiaEstado,
+  setDiaEstadoTipo,
   getAllProgramaciones,
   getProgramacionDetalle,
 } from '../../lib/api'
@@ -34,10 +35,19 @@ interface Props {
 }
 
 export default function DashboardPanel({ refresh, onDiaChange, showToast }: Props) {
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
-  const [modal, setModal] = useState(false)
+  const today = new Date().toISOString().slice(0, 10)
+  // dateRecojo defaults to Monday when today is Saturday
+  const defaultDateRecojo = (() => {
+    const d = new Date()
+    if (d.getDay() === 6) { const m = new Date(d); m.setDate(d.getDate() + 2); return m.toISOString().slice(0, 10) }
+    return d.toISOString().slice(0, 10)
+  })()
+  const [dateSalida, setDateSalida] = useState(today)
+  const [dateRecojo, setDateRecojo] = useState(defaultDateRecojo)
   const [supervisores, setSupervisores] = useState<Supervisor[]>([])
-  const [cerrado, setCerrado] = useState(false)
+  const [cerradoSalida, setCerradoSalida] = useState(false)
+  const [cerradoRecojo, setCerradoRecojo] = useState(false)
+  const [modalTipo, setModalTipo] = useState<'SALIDA' | 'RECOJO' | null>(null)
   const [all, setAll] = useState<ProgUI[]>([])
   const [loading, setLoading] = useState(false)
 
@@ -50,6 +60,24 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
       })
   }, [])
 
+  const mapProgs = async (progs: any[]): Promise<ProgUI[]> => {
+    return Promise.all(
+      (progs || []).map(async (p: any) => {
+        const detalle = await getProgramacionDetalle(p.id)
+        const data: Record<string, number> = {}
+        for (const row of detalle) {
+          const rutaTxt = row.ruta.replace('-', '_')
+          const rid = row.fila_label
+            ? `${rutaTxt}_${row.fila_label}`
+            : `${rutaTxt}_${row.lote ?? 0}_${row.comedor ?? 0}`
+          const ck = `${rid}||${row.paradero}`
+          data[ck] = row.cantidad ?? 0
+        }
+        return { id: p.id, user: p.usuarios?.username || '', area: p.area, tipo: p.tipo, hor: p.horario_label, total: p.total || 0, data } as ProgUI
+      })
+    )
+  }
+
   useEffect(() => {
     let active = true
 
@@ -57,48 +85,30 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
       try {
         setLoading(true)
 
-        const [dia, progs] = await Promise.all([
-          getDia(date),
-          getAllProgramaciones(date),
+        // Load both dates in parallel (they may differ on Saturdays)
+        const [dia, progsSalida, progsRecojo] = await Promise.all([
+          getDia(dateSalida),
+          getAllProgramaciones(dateSalida),
+          dateSalida === dateRecojo ? Promise.resolve(null) : getAllProgramaciones(dateRecojo),
         ])
 
         if (!active) return
+        setCerradoSalida(dia?.estado_salida === 'cerrado' || dia?.estado === 'cerrado')
+        setCerradoRecojo(dia?.estado_recojo === 'cerrado' || dia?.estado === 'cerrado')
 
-        setCerrado(dia?.estado === 'cerrado')
-
-        const detallesPorProg = await Promise.all(
-          (progs || []).map(async (p: any) => {
-            const detalle = await getProgramacionDetalle(p.id)
-            const data: Record<string, number> = {}
-
-            for (const row of detalle) {
-              const rutaTxt = row.ruta.replace('-', '_')
-              const rid = row.fila_label
-                ? `${rutaTxt}_${row.fila_label}`
-                : `${rutaTxt}_${row.lote ?? 0}_${row.comedor ?? 0}`
-
-              const ck = `${rid}||${row.paradero}`
-              data[ck] = row.cantidad ?? 0
-            }
-
-            return {
-              id: p.id,
-              user: p.usuarios?.username || '',
-              area: p.area,
-              tipo: p.tipo,
-              hor: p.horario_label,
-              total: p.total || 0,
-              data,
-            } as ProgUI
-          })
-        )
+        const mappedSalida = await mapProgs((progsSalida || []).filter((p: any) => p.tipo === 'SALIDA'))
+        const recojoSource = dateSalida === dateRecojo
+          ? (progsSalida || []).filter((p: any) => p.tipo === 'RECOJO')
+          : (progsRecojo || []).filter((p: any) => p.tipo === 'RECOJO')
+        const mappedRecojo = await mapProgs(recojoSource)
 
         if (!active) return
-        setAll(detallesPorProg)
+        setAll([...mappedSalida, ...mappedRecojo])
       } catch (e) {
         console.error('Error cargando dashboard:', e)
         if (!active) return
-        setCerrado(false)
+        setCerradoSalida(false)
+        setCerradoRecojo(false)
         setAll([])
       } finally {
         if (!active) return
@@ -109,7 +119,7 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
     void cargarDashboard()
 
     return () => { active = false }
-  }, [date, refresh])
+  }, [dateSalida, dateRecojo, refresh])
 
   const sal = useMemo(
     () => all.filter((x) => x.tipo === 'SALIDA').reduce((a, x) => a + (x.total || 0), 0),
@@ -125,22 +135,27 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
   const conDatos = useMemo(() => new Set(all.map((x) => x.user)).size, [all])
   const sinDatos = Math.max(0, supervisores.length - conDatos)
 
-  const handleToggleDia = () => setModal(true)
+  const handleToggleTipo = (tipo: 'SALIDA' | 'RECOJO') => setModalTipo(tipo)
 
-  const confirmToggle = async () => {
+  const confirmToggleTipo = async () => {
+    if (!modalTipo) return
+    const esCerrado = modalTipo === 'SALIDA' ? cerradoSalida : cerradoRecojo
+    const fecha = modalTipo === 'SALIDA' ? dateSalida : dateRecojo
     try {
-      await setDiaEstado(date, cerrado ? 'abierto' : 'cerrado', '')
-      setCerrado(!cerrado)
+      await setDiaEstadoTipo(fecha, modalTipo, esCerrado ? 'abierto' : 'cerrado')
+      if (modalTipo === 'SALIDA') setCerradoSalida(!cerradoSalida)
+      else setCerradoRecojo(!cerradoRecojo)
       onDiaChange()
+      const label = modalTipo === 'SALIDA' ? 'Salida' : 'Ingreso'
       showToast(
-        cerrado ? 'Día reabierto' : 'Día cerrado — supervisores bloqueados',
-        cerrado ? 'ok' : 'warn'
+        esCerrado ? `${label} reabierta` : `${label} cerrada — supervisores bloqueados`,
+        esCerrado ? 'ok' : 'warn'
       )
     } catch (e) {
-      console.error('Error cambiando estado del día:', e)
-      showToast('No se pudo cambiar el estado del día', 'err')
+      console.error('Error cambiando estado:', e)
+      showToast('No se pudo cambiar el estado', 'err')
     } finally {
-      setModal(false)
+      setModalTipo(null)
     }
   }
 
@@ -182,7 +197,10 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
     )
 
     const grandTotal = Object.values(totPar).reduce((a, b) => a + b, 0)
-    return { grupos, totPar, grandTotal }
+    // Return grupos with keys sorted in canonical horario order
+    const sortedGrupos: typeof grupos = {}
+    sortHorarios(Object.keys(grupos), filtroTipo).forEach((h) => { sortedGrupos[h] = grupos[h] })
+    return { grupos: sortedGrupos, totPar, grandTotal }
   }
 
   const buildTablaHtml = (
@@ -365,7 +383,7 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
     const tipoLabel = filtroTipo === 'SALIDA' ? 'SALIDA' : 'INGRESO'
 
     const allFiltrado = all.filter((m) => m.tipo === filtroTipo)
-    const hors = [...new Set(allFiltrado.map((m) => m.hor))]
+    const hors = sortHorarios([...new Set(allFiltrado.map((m) => m.hor))], filtroTipo)
     const areasList = [...new Set(allFiltrado.map((m) => m.area))]
 
     const th = (extra = '') => `background:#1a7a3c;color:white;padding:4px 6px;font-size:9px;text-align:center;vertical-align:middle;border:1px solid #155e30;${extra}`
@@ -465,7 +483,7 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
     const tipoLabel = filtroTipo === 'SALIDA' ? 'SALIDA' : 'INGRESO'
 
     const allFiltrado = all.filter((m) => m.tipo === filtroTipo)
-    const hors = [...new Set(allFiltrado.map((m) => m.hor))]
+    const hors = sortHorarios([...new Set(allFiltrado.map((m) => m.hor))], filtroTipo)
 
     const th = (extra = '') => `background:#1a7a3c;color:white;padding:4px 6px;font-size:9px;text-align:center;vertical-align:middle;border:1px solid #155e30;${extra}`
     const td = (extra = '') => `padding:3px 5px;font-size:9px;border:1px solid #e5e7eb;text-align:center;vertical-align:middle;${extra}`
@@ -612,7 +630,7 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
     const fecha = new Date().toLocaleDateString('es-PE', { weekday: 'short', day: '2-digit', month: '2-digit', year: '2-digit' })
     const tipoLabel = filtroTipo === 'SALIDA' ? 'SALIDA' : 'INGRESO'
     const allFiltrado = all.filter((m) => m.tipo === filtroTipo)
-    const hors = [...new Set(allFiltrado.map((m) => m.hor))]
+    const hors = sortHorarios([...new Set(allFiltrado.map((m) => m.hor))], filtroTipo)
     const areasList = [...new Set(allFiltrado.map((m) => m.area))]
 
     const wb = XLSX.utils.book_new()
@@ -690,7 +708,7 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
     const fecha = new Date().toLocaleDateString('es-PE', { weekday: 'short', day: '2-digit', month: '2-digit', year: '2-digit' })
     const tipoLabel = filtroTipo === 'SALIDA' ? 'SALIDA' : 'INGRESO'
     const allFiltrado = all.filter((m) => m.tipo === filtroTipo)
-    const hors = [...new Set(allFiltrado.map((m) => m.hor))]
+    const hors = sortHorarios([...new Set(allFiltrado.map((m) => m.hor))], filtroTipo)
 
     const wb = XLSX.utils.book_new()
     const GREEN_DARK = '1a7a3c', GREEN_MID = 'bbf7d0', GREEN_PALE = 'f0fdf4', BLUE_PALE = 'eff6ff', GREEN_LIGHT = 'd4edda', WHITE = 'ffffff'
@@ -767,7 +785,234 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
     XLSX.writeFile(wb, `comedor_${tipoLabel.toLowerCase()}_${new Date().toISOString().slice(0, 10)}.xlsx`)
   }
 
-  const ResumenCard = ({ tipo }: { tipo: 'SALIDA' | 'RECOJO' }) => {
+  // Orden canónico de horarios para sorting
+  const ORDEN_SALIDA = ['Salida 13:00','Salida 14:00','Salida 15:30','Salida 16:00','Salida 17:00','Salida 17:30','Salida 23:00','Salida 2:00']
+  const ORDEN_RECOJO = ['De 05:00 a 14:00','De 06:30 a 15:30','De 07:30 a 16:30','De 17:00 a 02:00']
+
+  const sortHorarios = (hors: string[], tipo: 'SALIDA' | 'RECOJO') => {
+    const orden = tipo === 'SALIDA' ? ORDEN_SALIDA : ORDEN_RECOJO
+    return [...hors].sort((a, b) => {
+      const ia = orden.indexOf(a)
+      const ib = orden.indexOf(b)
+      if (ia === -1 && ib === -1) return a.localeCompare(b)
+      if (ia === -1) return 1
+      if (ib === -1) return -1
+      return ia - ib
+    })
+  }
+
+  const buildParaderosData = (filtroTipo: 'SALIDA' | 'RECOJO') => {
+    const allFiltrado = all.filter((m) => m.tipo === filtroTipo)
+    const hors = sortHorarios([...new Set(allFiltrado.map((m) => m.hor))], filtroTipo)
+
+    const horParMap: Record<string, Record<string, number>> = {}
+    hors.forEach((hor) => { horParMap[hor] = {} })
+
+    allFiltrado.forEach((m) => {
+      ALLP.forEach(({ p }) => {
+        let s = 0
+        Object.keys(m.data).forEach((ck) => { if (ck.endsWith('||' + p)) s += m.data[ck] || 0 })
+        if (s > 0) horParMap[m.hor][p] = (horParMap[m.hor]?.[p] || 0) + s
+      })
+    })
+
+    const horTotals: Record<string, number> = {}
+    hors.forEach((hor) => { horTotals[hor] = ALLP.reduce((a, { p }) => a + (horParMap[hor]?.[p] || 0), 0) })
+
+    const parTotals: Record<string, number> = {}
+    ALLP.forEach(({ p }) => { parTotals[p] = hors.reduce((a, hor) => a + (horParMap[hor]?.[p] || 0), 0) })
+    const grandTotal = Object.values(parTotals).reduce((a, b) => a + b, 0)
+
+    const parUsados = ALLP.filter(({ p }) => parTotals[p] > 0)
+    const agUsados = AGK.filter((ag) => AGR[ag].some((p) => parUsados.some((x) => x.p === p)))
+
+    return { hors, horParMap, horTotals, parTotals, parUsados, agUsados, grandTotal }
+  }
+
+  const exportarReporteParaderos = (filtroTipo: 'SALIDA' | 'RECOJO') => {
+    const fechaBase = filtroTipo === 'SALIDA' ? dateSalida : dateRecojo
+    const fechaDisplay = new Date(fechaBase + 'T12:00:00').toLocaleDateString('es-PE', { weekday: 'short', day: '2-digit', month: '2-digit', year: '2-digit' })
+    const tipoLabel = filtroTipo === 'SALIDA' ? 'SALIDA' : 'INGRESO'
+    const { hors, horParMap, horTotals, parUsados, agUsados, parTotals, grandTotal } = buildParaderosData(filtroTipo)
+
+    const DARK_BLUE = '#0d2b6e', MID_BLUE = '#1a3a8f', LIGHT_BLUE = '#e8edf7'
+    const YELLOW_HL = '#fff3b0', YELLOW_BORDER = '#e6b800', GRAY_BORDER = '#c0c8d8', WHITE = '#ffffff'
+    const maxHorTotal = Math.max(...Object.values(horTotals))
+
+    const thBase = `background:${DARK_BLUE};color:${WHITE};font-weight:700;font-size:9px;text-align:center;border:1px solid ${GRAY_BORDER};padding:2px 3px;vertical-align:middle;`
+    const thAg = `background:${MID_BLUE};color:${WHITE};font-weight:700;font-size:9px;text-align:center;border:1px solid ${GRAY_BORDER};padding:3px 4px;`
+    const tdBase = `font-size:9px;text-align:center;border:1px solid ${GRAY_BORDER};padding:2px 3px;`
+    const tdTotal = `font-size:9px;font-weight:800;text-align:center;border:1px solid ${GRAY_BORDER};padding:2px 4px;background:${LIGHT_BLUE};color:${DARK_BLUE};`
+    const tdGrand = `font-size:9px;font-weight:900;text-align:center;border:1px solid ${DARK_BLUE};padding:2px 4px;background:${DARK_BLUE};color:${WHITE};`
+
+    const agHeaderCells = agUsados.map((ag) => {
+      const cols = AGR[ag].filter((p) => parUsados.some((x) => x.p === p)).length
+      return `<th colspan="${cols}" style="${thAg}">${ag}</th>`
+    }).join('')
+
+    const parHeaderCells = parUsados.map(({ p }) =>
+      `<th style="${thBase}width:28px;min-width:28px;max-width:28px;padding:0;">
+        <div style="height:90px;display:flex;align-items:center;justify-content:center;">
+          <span style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:8px;line-height:1.2;text-align:center;">${p}</span>
+        </div>
+      </th>`
+    ).join('')
+
+    const dataRows = hors.map((hor) => {
+      const isMax = horTotals[hor] === maxHorTotal && maxHorTotal > 0
+      const rowBg = isMax ? `background:${YELLOW_HL};` : `background:${WHITE};`
+      const horStyle = isMax
+        ? `font-size:9px;font-weight:900;text-align:center;border:2px solid ${YELLOW_BORDER};padding:3px 6px;background:${YELLOW_HL};color:#6b4c00;white-space:nowrap;`
+        : `font-size:9px;font-weight:700;text-align:center;border:1px solid ${GRAY_BORDER};padding:3px 6px;background:${LIGHT_BLUE};color:${DARK_BLUE};white-space:nowrap;`
+      const cells = parUsados.map(({ p }) => {
+        const v = horParMap[hor]?.[p] || 0
+        const brd = isMax ? `border:1px solid ${YELLOW_BORDER};` : ''
+        return `<td style="${tdBase}${rowBg}${brd}${v ? 'font-weight:700;' : `color:${GRAY_BORDER};`}">${v || ''}</td>`
+      }).join('')
+      const totStyle = isMax
+        ? `font-size:9px;font-weight:900;text-align:center;border:2px solid ${YELLOW_BORDER};padding:2px 4px;background:${YELLOW_HL};color:#6b4c00;`
+        : tdTotal
+      return `<tr><td style="${horStyle}">${hor}</td>${cells}<td style="${totStyle}">${horTotals[hor] || ''}</td></tr>`
+    }).join('')
+
+    const totalCells = parUsados.map(({ p }) => {
+      const v = parTotals[p] || 0
+      return `<td style="${tdGrand}${v ? '' : `color:#8899cc;`}">${v || ''}</td>`
+    }).join('')
+
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+    <style>
+      body{font-family:Arial,sans-serif;margin:16px;background:#f0f2f8}
+      .card{background:white;border-radius:10px;padding:16px;box-shadow:0 4px 16px rgba(0,0,0,.12);max-width:1500px;margin:0 auto}
+      table{border-collapse:collapse;width:100%}
+      @media print{body{background:white;margin:6px}.card{box-shadow:none;padding:8px}@page{size:landscape;margin:8mm}}
+    </style></head><body><div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <div>
+          <div style="font-size:13px;font-weight:900;color:${DARK_BLUE};letter-spacing:0.5px;text-transform:uppercase;">Distribución de Personal en los Paraderos</div>
+          <div style="margin-top:3px;"><span style="font-size:10px;font-weight:700;color:white;background:${filtroTipo === 'SALIDA' ? '#d97706' : '#2563eb'};padding:2px 8px;border-radius:4px;">${tipoLabel}</span></div>
+        </div>
+        <div style="font-size:10px;color:#555;text-align:right;">Fecha: ${fechaDisplay}</div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th rowspan="2" style="${thBase}min-width:65px;font-size:10px;">HORARIO</th>
+            ${agHeaderCells}
+            <th rowspan="2" style="${thBase}min-width:46px;font-size:10px;background:#0a1f5c;">TOTAL</th>
+          </tr>
+          <tr>${parHeaderCells}</tr>
+        </thead>
+        <tbody>
+          ${dataRows}
+          <tr>
+            <td style="${tdGrand}">TOTAL</td>
+            ${totalCells}
+            <td style="${tdGrand}font-size:11px;">${grandTotal}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div></body></html>`
+
+    const win = window.open('', '_blank', 'width=1500,height=900')
+    if (win) { win.document.write(html); win.document.close(); win.focus() }
+  }
+
+  const exportarExcelParaderos = (filtroTipo: 'SALIDA' | 'RECOJO') => {
+    const fechaBase = filtroTipo === 'SALIDA' ? dateSalida : dateRecojo
+    const fechaDisplay = new Date(fechaBase + 'T12:00:00').toLocaleDateString('es-PE', { weekday: 'short', day: '2-digit', month: '2-digit', year: '2-digit' })
+    const tipoLabel = filtroTipo === 'SALIDA' ? 'SALIDA' : 'INGRESO'
+    const { hors, horParMap, horTotals, parUsados, agUsados, parTotals, grandTotal } = buildParaderosData(filtroTipo)
+
+    const DARK_BLUE = '0d2b6e', MID_BLUE = '1a3a8f', LIGHT_BLUE = 'dce3f5'
+    const YELLOW_HL = 'fff3b0', WHITE = 'ffffff', GRAY = 'c0c8d8'
+    const maxHorTotal = Math.max(...Object.values(horTotals))
+
+    const wb = XLSX.utils.book_new()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ws: any = {}
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const merges: any[] = []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sc = (r: number, c: number, v: string | number, s: any) => {
+      ws[XLSX.utils.encode_cell({ r, c })] = { v, t: typeof v === 'number' ? 'n' : 's', s }
+    }
+    const addMerge = (r1: number, c1: number, r2: number, c2: number) => merges.push({ s: { r: r1, c: c1 }, e: { r: r2, c: c2 } })
+
+    const brd = { top: { style: 'thin', color: { rgb: GRAY } }, bottom: { style: 'thin', color: { rgb: GRAY } }, left: { style: 'thin', color: { rgb: GRAY } }, right: { style: 'thin', color: { rgb: GRAY } } }
+    const brdDark = { top: { style: 'thin', color: { rgb: DARK_BLUE } }, bottom: { style: 'thin', color: { rgb: DARK_BLUE } }, left: { style: 'thin', color: { rgb: DARK_BLUE } }, right: { style: 'thin', color: { rgb: DARK_BLUE } } }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const thS = (extra?: any): any => ({ font: { bold: true, color: { rgb: WHITE }, sz: 9 }, fill: { fgColor: { rgb: DARK_BLUE } }, border: brd, alignment: { horizontal: 'center', vertical: 'center', wrapText: true }, ...extra })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const thAgS = (extra?: any): any => ({ font: { bold: true, color: { rgb: WHITE }, sz: 9 }, fill: { fgColor: { rgb: MID_BLUE } }, border: brd, alignment: { horizontal: 'center', vertical: 'center' }, ...extra })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tdS = (extra?: any): any => ({ font: { sz: 9 }, border: brd, alignment: { horizontal: 'center', vertical: 'center' }, ...extra })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const grandS = (extra?: any): any => ({ font: { bold: true, color: { rgb: WHITE }, sz: 9 }, fill: { fgColor: { rgb: DARK_BLUE } }, border: brdDark, alignment: { horizontal: 'center', vertical: 'center' }, ...extra })
+
+    let r = 0
+    sc(r, 0, `Distribución de Personal en los Paraderos — ${tipoLabel}`, { font: { bold: true, sz: 13, color: { rgb: DARK_BLUE } }, alignment: { horizontal: 'left' } })
+    addMerge(r, 0, r, 5); r++
+    sc(r, 0, `Fecha: ${fechaDisplay}`, { font: { sz: 9, color: { rgb: '555555' } } })
+    addMerge(r, 0, r, 5); r++; r++
+
+    // Header row 1: HORARIO + agrupadores + TOTAL
+    let c = 0
+    sc(r, c, 'HORARIO', thS()); addMerge(r, c, r + 1, c); c++
+    agUsados.forEach((ag) => {
+      const cols = AGR[ag].filter((p) => parUsados.some((x) => x.p === p)).length
+      sc(r, c, ag, thAgS()); addMerge(r, c, r, c + cols - 1); c += cols
+    })
+    sc(r, c, 'TOTAL', thS({ fill: { fgColor: { rgb: '0a1f5c' } } })); addMerge(r, c, r + 1, c); r++
+
+    // Header row 2: paradero names
+    c = 1
+    parUsados.forEach(({ p }) => {
+      sc(r, c++, p, thS({ alignment: { horizontal: 'center', vertical: 'bottom', textRotation: 90, wrapText: true } }))
+    }); r++
+
+    // Data rows
+    hors.forEach((hor) => {
+      const isMax = horTotals[hor] === maxHorTotal && maxHorTotal > 0
+      const rowFill = isMax ? { fgColor: { rgb: YELLOW_HL } } : { fgColor: { rgb: LIGHT_BLUE } }
+      const horFont = isMax
+        ? { bold: true, sz: 9, color: { rgb: '6b4c00' } }
+        : { bold: true, sz: 9, color: { rgb: DARK_BLUE } }
+      c = 0
+      sc(r, c++, hor, { font: horFont, fill: rowFill, border: brd, alignment: { horizontal: 'center', vertical: 'center' } })
+      parUsados.forEach(({ p }) => {
+        const v = horParMap[hor]?.[p] || 0
+        const cellFill = isMax ? { fgColor: { rgb: YELLOW_HL } } : { fgColor: { rgb: WHITE } }
+        sc(r, c++, v || '', v
+          ? { font: { bold: true, sz: 9 }, fill: cellFill, border: brd, alignment: { horizontal: 'center', vertical: 'center' } }
+          : { font: { color: { rgb: GRAY }, sz: 9 }, fill: cellFill, border: brd, alignment: { horizontal: 'center', vertical: 'center' } }
+        )
+      })
+      const totFill = isMax ? { fgColor: { rgb: YELLOW_HL } } : { fgColor: { rgb: LIGHT_BLUE } }
+      const totFont = isMax ? { bold: true, sz: 9, color: { rgb: '6b4c00' } } : { bold: true, sz: 9, color: { rgb: DARK_BLUE } }
+      sc(r, c, horTotals[hor] || '', { font: totFont, fill: totFill, border: brd, alignment: { horizontal: 'center', vertical: 'center' } })
+      r++
+    })
+
+    // Total row
+    c = 0
+    sc(r, c++, 'TOTAL', grandS())
+    parUsados.forEach(({ p }) => {
+      const v = parTotals[p] || 0
+      sc(r, c++, v || '', grandS())
+    })
+    sc(r, c, grandTotal, grandS({ font: { bold: true, sz: 10, color: { rgb: WHITE } } }))
+
+    ws['!cols'] = [{ wch: 16 }, ...parUsados.map(() => ({ wch: 5 })), { wch: 7 }]
+    ws['!rows'] = [undefined, undefined, undefined, { hpt: 20 }, { hpt: 80 }, ...hors.map(() => ({ hpt: 16 }))]
+    ws['!merges'] = merges
+    ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r, c } })
+
+    XLSX.utils.book_append_sheet(wb, ws, 'Por Paradero')
+    XLSX.writeFile(wb, `paraderos_${tipoLabel.toLowerCase()}_${new Date().toISOString().slice(0, 10)}.xlsx`)
+  }
+
+    const ResumenCard = ({ tipo }: { tipo: 'SALIDA' | 'RECOJO' }) => {
     const isSal = tipo === 'SALIDA'
     const mine = all.filter((x) => x.tipo === tipo)
     const { grupos } = buildReporteData(tipo)
@@ -801,6 +1046,14 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
               📥 XLS comedor
             </button>
           </div>
+          <div className="flex gap-1.5">
+            <button onClick={() => exportarReporteParaderos(tipo)} className={`flex-1 text-xs font-semibold py-1.5 rounded-lg text-white ${isSal ? 'bg-rose-600 hover:bg-rose-700' : 'bg-violet-600 hover:bg-violet-700'}`}>
+              📍 Por paradero
+            </button>
+            <button onClick={() => exportarExcelParaderos(tipo)} className={`flex-1 text-xs font-semibold py-1.5 rounded-lg border ${isSal ? 'border-rose-400 text-rose-700 hover:bg-rose-50' : 'border-violet-400 text-violet-700 hover:bg-violet-50'}`}>
+              📥 XLS paradero
+            </button>
+          </div>
         </div>
 
         {/* Título y total */}
@@ -813,22 +1066,19 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
           </span>
         </div>
 
-        {Object.entries(grupos).map(([hor, filas]) => {
-          const horTotal = filas.reduce((a, f) => a + f.total, 0)
-          return (
-            <div key={hor} className="mb-1">
-              {filas.map((f, i) => (
-                <div key={i} className="flex items-center gap-1 py-0.5 border-b border-gray-50 last:border-0">
-                  <span className={`text-xs font-semibold ${isSal ? 'text-amber-700' : 'text-blue-700'}`}>{hor} — {horTotal} pers.</span>
-                  <span className="text-xs text-gray-300">·</span>
-                  <span className="text-xs text-gray-500">{f.sup}</span>
-                  <span className="text-xs text-gray-300">·</span>
-                  <span className="text-xs text-gray-400">{f.area}</span>
-                </div>
-              ))}
-            </div>
-          )
-        })}
+        {Object.entries(grupos).map(([hor, filas]) => (
+          <div key={hor} className="mb-1">
+            {filas.map((f, i) => (
+              <div key={i} className="flex items-center gap-1 py-0.5 border-b border-gray-50 last:border-0">
+                <span className={`text-xs font-semibold ${isSal ? 'text-amber-700' : 'text-blue-700'}`}>{hor} — {f.total} pers.</span>
+                <span className="text-xs text-gray-300">·</span>
+                <span className="text-xs text-gray-500">{f.sup}</span>
+                <span className="text-xs text-gray-300">·</span>
+                <span className="text-xs text-gray-400">{f.area}</span>
+              </div>
+            ))}
+          </div>
+        ))}
       </div>
     )
   }
@@ -873,28 +1123,48 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
   return (
     <div>
       <div className="card mb-3 flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <h2 className="text-sm font-bold text-gray-900">Panel Administrador</h2>
-          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${cerrado ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-            {cerrado ? '🔒 Día cerrado' : '🔓 Día abierto'}
+          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${cerradoSalida ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
+            {cerradoSalida ? '🔒 Salida cerrada' : '🔓 Salida abierta'}
+          </span>
+          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${cerradoRecojo ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+            {cerradoRecojo ? '🔒 Ingreso cerrado' : '🔓 Ingreso abierto'}
           </span>
           {loading && <span className="text-xs text-gray-400">Cargando…</span>}
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="input-base w-auto text-xs"
-          />
-
-          <button
-            onClick={handleToggleDia}
-            className={`text-xs font-semibold px-3 py-1.5 rounded-lg text-white ${cerrado ? 'bg-amber-500 hover:bg-amber-600' : 'bg-red-600 hover:bg-red-700'}`}
-          >
-            {cerrado ? '🔓 Reabrir día' : '🔒 Cerrar día'}
-          </button>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-semibold text-amber-600 whitespace-nowrap">↑ Salida</span>
+            <input
+              type="date"
+              value={dateSalida}
+              onChange={(e) => setDateSalida(e.target.value)}
+              className="input-base w-auto text-xs"
+            />
+            <button
+              onClick={() => handleToggleTipo('SALIDA')}
+              className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg text-white whitespace-nowrap ${cerradoSalida ? 'bg-amber-500 hover:bg-amber-600' : 'bg-amber-600 hover:bg-amber-700'}`}
+            >
+              {cerradoSalida ? '🔓 Reabrir' : '🔒 Cerrar'}
+            </button>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-semibold text-blue-600 whitespace-nowrap">↓ Ingreso</span>
+            <input
+              type="date"
+              value={dateRecojo}
+              onChange={(e) => setDateRecojo(e.target.value)}
+              className="input-base w-auto text-xs"
+            />
+            <button
+              onClick={() => handleToggleTipo('RECOJO')}
+              className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg text-white whitespace-nowrap ${cerradoRecojo ? 'bg-blue-500 hover:bg-blue-600' : 'bg-blue-600 hover:bg-blue-700'}`}
+            >
+              {cerradoRecojo ? '🔓 Reabrir' : '🔒 Cerrar'}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -927,13 +1197,27 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
       </div>
 
       <Modal
-        open={modal}
-        title={cerrado ? 'Reabrir día' : 'Cerrar día'}
-        message={cerrado ? 'Se permitirá editar programaciones nuevamente. ¿Confirmas?' : 'Los supervisores no podrán editar sus programaciones. ¿Confirmas?'}
-        confirmLabel={cerrado ? 'Reabrir' : 'Cerrar día'}
-        confirmVariant={cerrado ? 'success' : 'danger'}
-        onConfirm={() => void confirmToggle()}
-        onCancel={() => setModal(false)}
+        open={modalTipo !== null}
+        title={
+          modalTipo === 'SALIDA'
+            ? (cerradoSalida ? 'Reabrir Salida' : 'Cerrar Salida')
+            : (cerradoRecojo ? 'Reabrir Ingreso' : 'Cerrar Ingreso')
+        }
+        message={
+          modalTipo === 'SALIDA'
+            ? (cerradoSalida ? 'Se permitirá registrar salidas nuevamente. ¿Confirmas?' : 'Los supervisores no podrán registrar salidas. ¿Confirmas?')
+            : (cerradoRecojo ? 'Se permitirá registrar ingresos nuevamente. ¿Confirmas?' : 'Los supervisores no podrán registrar ingresos. ¿Confirmas?')
+        }
+        confirmLabel={
+          modalTipo === 'SALIDA'
+            ? (cerradoSalida ? 'Reabrir' : 'Cerrar Salida')
+            : (cerradoRecojo ? 'Reabrir' : 'Cerrar Ingreso')
+        }
+        confirmVariant={
+          (modalTipo === 'SALIDA' ? cerradoSalida : cerradoRecojo) ? 'success' : 'danger'
+        }
+        onConfirm={() => void confirmToggleTipo()}
+        onCancel={() => setModalTipo(null)}
       />
     </div>
   )

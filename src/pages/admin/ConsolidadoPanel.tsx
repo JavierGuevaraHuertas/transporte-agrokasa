@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { AGK, AGR, ALLP, RUTAS, getRid } from '../../utils/constants'
 import { getAllProgramaciones, getProgramacionDetalle } from '../../lib/api'
 import type { ProgramacionWithData } from '../../types'
@@ -9,122 +9,181 @@ interface Props {
 
 type SubTab = 'paraderos' | 'comedores'
 
+// Orden canónico de horarios
+const ORDEN_SALIDA = ['Salida 13:00','Salida 14:00','Salida 15:30','Salida 16:00','Salida 17:00','Salida 17:30','Salida 23:00','Salida 2:00']
+const ORDEN_RECOJO = ['De 05:00 a 14:00','De 06:30 a 15:30','De 07:30 a 16:30','De 17:00 a 02:00']
+
+function sortHorarios(hors: string[], tipo: 'SALIDA' | 'RECOJO') {
+  const orden = tipo === 'SALIDA' ? ORDEN_SALIDA : ORDEN_RECOJO
+  return [...hors].sort((a, b) => {
+    const ia = orden.indexOf(a), ib = orden.indexOf(b)
+    if (ia === -1 && ib === -1) return a.localeCompare(b)
+    if (ia === -1) return 1
+    if (ib === -1) return -1
+    return ia - ib
+  })
+}
+
+// Lunes siguiente si hoy es sábado
+function defaultDateRecojo() {
+  const d = new Date()
+  if (d.getDay() === 6) { const m = new Date(d); m.setDate(d.getDate() + 2); return m.toISOString().slice(0, 10) }
+  return d.toISOString().slice(0, 10)
+}
+
 function fp(all: ProgramacionWithData[], hor: string, area: string) {
   return all.filter(
     (m) => (hor === 'ALL' || m.hor === hor) && (area === 'ALL' || m.area === area)
   )
 }
 
+async function cargarProgramaciones(fecha: string) {
+  const progs = await getAllProgramaciones(fecha)
+  return Promise.all(
+    (progs || []).map(async (p: any) => {
+      const detalle = await getProgramacionDetalle(p.id)
+      const data: Record<string, number> = {}
+      detalle.forEach((row) => {
+        const rutaTxt = row.ruta.replace('-', '_')
+        const rid = row.fila_label
+          ? `${rutaTxt}_${row.fila_label}`
+          : `${rutaTxt}_${row.lote ?? 0}_${row.comedor ?? 0}`
+        data[`${rid}||${row.paradero}`] = row.cantidad ?? 0
+      })
+      return {
+        key: p.id,
+        user: p.usuarios?.nombre || p.usuarios?.username || '',
+        tipo: p.tipo,
+        hor: p.horario_label,
+        area: p.area,
+        total: p.total || 0,
+        data,
+      } as ProgramacionWithData
+    })
+  )
+}
+
 export default function ConsolidadoPanel({ refresh }: Props) {
+  const today = new Date().toISOString().slice(0, 10)
+
   const [sub, setSub] = useState<SubTab>('paraderos')
   const [hor, setHor] = useState('ALL')
   const [area, setArea] = useState('ALL')
-  const [all, setAll] = useState<ProgramacionWithData[]>([])
+  const [dateSalida, setDateSalida] = useState(today)
+  const [dateRecojo, setDateRecojo] = useState(defaultDateRecojo)
+  const [salida, setSalida] = useState<ProgramacionWithData[]>([])
+  const [recojo, setRecojo] = useState<ProgramacionWithData[]>([])
   const [loading, setLoading] = useState(false)
 
-  useEffect(() => {
-    let active = true
-
-    async function cargar() {
-      try {
-        setLoading(true)
-        const fecha = new Date().toISOString().slice(0, 10)
-        const progs = await getAllProgramaciones(fecha)
-
-        const enriched = await Promise.all(
-          (progs || []).map(async (p: any) => {
-            const detalle = await getProgramacionDetalle(p.id)
-            const data: Record<string, number> = {}
-
-            detalle.forEach((row) => {
-              const rutaTxt = row.ruta.replace('-', '_')
-              const rid = row.fila_label
-                ? `${rutaTxt}_${row.fila_label}`
-                : `${rutaTxt}_${row.lote ?? 0}_${row.comedor ?? 0}`
-              const ck = `${rid}||${row.paradero}`
-              data[ck] = row.cantidad ?? 0
-            })
-
-            return {
-              key: p.id,
-              user: p.usuarios?.nombre || p.usuarios?.username || '',
-              tipo: p.tipo,
-              hor: p.horario_label,
-              area: p.area,
-              total: p.total || 0,
-              data,
-            } as ProgramacionWithData
-          })
-        )
-
-        if (!active) return
-        setAll(enriched)
-      } catch (e) {
-        console.error('Error cargando consolidado:', e)
-        if (!active) return
-        setAll([])
-      } finally {
-        if (!active) return
-        setLoading(false)
+  const cargar = useCallback(async () => {
+    try {
+      setLoading(true)
+      if (dateSalida === dateRecojo) {
+        const all = await cargarProgramaciones(dateSalida)
+        setSalida(all.filter((x) => x.tipo === 'SALIDA'))
+        setRecojo(all.filter((x) => x.tipo === 'RECOJO'))
+      } else {
+        const [allSal, allRec] = await Promise.all([
+          cargarProgramaciones(dateSalida),
+          cargarProgramaciones(dateRecojo),
+        ])
+        setSalida(allSal.filter((x) => x.tipo === 'SALIDA'))
+        setRecojo(allRec.filter((x) => x.tipo === 'RECOJO'))
       }
+    } catch (e) {
+      console.error('Error cargando consolidado:', e)
+      setSalida([]); setRecojo([])
+    } finally {
+      setLoading(false)
     }
+  }, [dateSalida, dateRecojo])
 
-    void cargar()
-    return () => { active = false }
-  }, [refresh])
+  useEffect(() => { void cargar() }, [cargar, refresh])
 
+  const all = [...salida, ...recojo]
   const hors = [...new Set(all.map((x) => x.hor))]
   const areas = [...new Set(all.map((x) => x.area))]
-  const progs = fp(all, hor, area)
+
+  // progs filtered by hor/area, but keep tipo separation
+  const progsSal = fp(salida, hor, area)
+  const progsRec = fp(recojo, hor, area)
+
+  const fechaSalidaLabel = new Date(dateSalida + 'T12:00:00').toLocaleDateString('es-PE', { weekday: 'short', day: '2-digit', month: '2-digit' })
+  const fechaRecojoLabel = new Date(dateRecojo + 'T12:00:00').toLocaleDateString('es-PE', { weekday: 'short', day: '2-digit', month: '2-digit' })
+  const fechasDifieren = dateSalida !== dateRecojo
 
   const Filtros = () => (
     <div className="card mb-3 flex gap-3 flex-wrap items-end">
-      {[
-        { label: 'Horario', val: hor, set: setHor, opts: [['ALL', 'Todos'], ...hors.map((h) => [h, h])] },
-        { label: 'Área', val: area, set: setArea, opts: [['ALL', 'Todas'], ...areas.map((a) => [a, a])] },
-      ].map((f) => (
-        <div key={f.label}>
-          <label className="block text-xs font-semibold text-gray-500 mb-1">{f.label}</label>
-          <select value={f.val} onChange={(e) => f.set(e.target.value)} className="input-base text-xs w-auto">
-            {f.opts.map(([v, l]) => (
-              <option key={v} value={v}>{l}</option>
-            ))}
-          </select>
-        </div>
-      ))}
+      {/* Fecha Salida */}
+      <div>
+        <label className="block text-xs font-semibold text-amber-600 mb-1">↑ Fecha Salida</label>
+        <input
+          type="date"
+          value={dateSalida}
+          onChange={(e) => setDateSalida(e.target.value || today)}
+          className="input-base text-xs w-auto"
+        />
+        {fechasDifieren && (
+          <p className="text-xs text-amber-500 mt-0.5">{fechaSalidaLabel}</p>
+        )}
+      </div>
+
+      {/* Fecha Ingreso */}
+      <div>
+        <label className="block text-xs font-semibold text-blue-600 mb-1">↓ Fecha Ingreso</label>
+        <input
+          type="date"
+          value={dateRecojo}
+          onChange={(e) => setDateRecojo(e.target.value || today)}
+          className="input-base text-xs w-auto"
+        />
+        {fechasDifieren && (
+          <p className="text-xs text-blue-500 mt-0.5">{fechaRecojoLabel}</p>
+        )}
+      </div>
+
+      {/* Horario */}
+      <div>
+        <label className="block text-xs font-semibold text-gray-500 mb-1">Horario</label>
+        <select value={hor} onChange={(e) => setHor(e.target.value)} className="input-base text-xs w-auto">
+          <option value="ALL">Todos</option>
+          {hors.map((h) => <option key={h} value={h}>{h}</option>)}
+        </select>
+      </div>
+
+      {/* Área */}
+      <div>
+        <label className="block text-xs font-semibold text-gray-500 mb-1">Área</label>
+        <select value={area} onChange={(e) => setArea(e.target.value)} className="input-base text-xs w-auto">
+          <option value="ALL">Todas</option>
+          {areas.map((a) => <option key={a} value={a}>{a}</option>)}
+        </select>
+      </div>
+
       {loading && <span className="text-xs text-gray-400">Cargando…</span>}
     </div>
   )
 
   const ParaderosBlock = ({ tipo }: { tipo: 'SALIDA' | 'RECOJO' }) => {
-    const filtered = progs.filter((m) => m.tipo === tipo)
+    const filtered = tipo === 'SALIDA' ? progsSal : progsRec
     if (!filtered.length) return <div className="mb-1 text-center py-4 text-gray-300 text-xs">Sin datos</div>
 
-    const hors = [...new Set(filtered.map((m) => m.hor))]
+    const horsOrdenados = sortHorarios([...new Set(filtered.map((m) => m.hor))], tipo)
 
-    // Totales globales por paradero
     const tot: Record<string, number> = {}
     ALLP.forEach(({ p }) => { tot[p] = 0 })
     let grandTotal = 0
 
-    // Construir filas: por cada horario > ruta > lote/comedor
     type FilaVis = {
-      hor: string
-      isFirstHor: boolean
-      horSpan: number
-      ruta: string
-      isFirstRuta: boolean
-      rutaSpan: number
-      lote: string
-      com: string
-      lbl: string
-      pars: Record<string, number>
-      rowTotal: number
+      hor: string; isFirstHor: boolean; horSpan: number
+      ruta: string; isFirstRuta: boolean; rutaSpan: number
+      lote: string; com: string; lbl: string
+      pars: Record<string, number>; rowTotal: number
     }
 
     const allFilas: FilaVis[] = []
 
-    hors.forEach((h) => {
+    horsOrdenados.forEach((h) => {
       const progsHor = filtered.filter((m) => m.hor === h)
       const filasHor: Omit<FilaVis, 'isFirstHor' | 'horSpan'>[] = []
 
@@ -144,20 +203,11 @@ export default function ConsolidadoPanel({ refresh }: Props) {
                 if (ck.startsWith(ridData + '||') && ck.endsWith('||' + p)) s += m.data[ck] || 0
               })
             })
-            pars[p] = s
-            rowTotal += s
+            pars[p] = s; rowTotal += s
           })
 
           if (rowTotal > 0) {
-            filasRuta.push({
-              hor: h,
-              ruta,
-              lote: fila.lbl ? '' : String(fila.l ?? ''),
-              com: fila.lbl ? '' : String(fila.c ?? ''),
-              lbl: fila.lbl ?? '',
-              pars,
-              rowTotal,
-            })
+            filasRuta.push({ hor: h, ruta, lote: fila.lbl ? '' : String(fila.l ?? ''), com: fila.lbl ? '' : String(fila.c ?? ''), lbl: fila.lbl ?? '', pars, rowTotal })
           }
         })
 
@@ -173,12 +223,17 @@ export default function ConsolidadoPanel({ refresh }: Props) {
       })
     })
 
+    const fechaLabel = tipo === 'SALIDA' ? fechaSalidaLabel : fechaRecojoLabel
+
     return (
       <div className="mb-6">
         <div className="flex items-center gap-2 mb-2 px-1">
           <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${tipo === 'SALIDA' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>
             {tipo === 'SALIDA' ? '↑ SALIDA' : '↓ INGRESO'}
           </span>
+          {fechasDifieren && (
+            <span className="text-xs text-gray-400">📅 {fechaLabel}</span>
+          )}
         </div>
 
         <div className="overflow-auto max-h-[60vh] rounded-xl border border-gray-100">
@@ -278,7 +333,7 @@ export default function ConsolidadoPanel({ refresh }: Props) {
   }
 
   const ComedoresBlock = ({ tipo }: { tipo: 'SALIDA' | 'RECOJO' }) => {
-    const filtered = progs.filter((m) => m.tipo === tipo)
+    const filtered = tipo === 'SALIDA' ? progsSal : progsRec
     if (!filtered.length) return <div className="mb-1 text-center py-4 text-gray-300 text-xs">Sin datos</div>
 
     const areasList = [...new Set(filtered.map((x) => x.area))]
@@ -349,12 +404,17 @@ export default function ConsolidadoPanel({ refresh }: Props) {
       })
     })
 
+    const fechaLabel = tipo === 'SALIDA' ? fechaSalidaLabel : fechaRecojoLabel
+
     return (
       <div className="mb-6">
         <div className="flex items-center gap-2 mb-2 px-1">
           <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${tipo === 'SALIDA' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>
             {tipo === 'SALIDA' ? '↑ SALIDA' : '↓ INGRESO'}
           </span>
+          {fechasDifieren && (
+            <span className="text-xs text-gray-400">📅 {fechaLabel}</span>
+          )}
         </div>
 
         <div className="overflow-auto max-h-[50vh] rounded-xl border border-gray-100">

@@ -76,24 +76,36 @@ export type Database = {
           id: string
           fecha: string
           estado: 'abierto' | 'cerrado'
+          estado_salida: 'abierto' | 'cerrado'
+          estado_recojo: 'abierto' | 'cerrado'
           cerrado_por: string | null
           cerrado_at: string | null
+          cerrado_salida_at: string | null
+          cerrado_recojo_at: string | null
           created_at: string | null
         }
         Insert: {
           id?: string
           fecha: string
           estado?: 'abierto' | 'cerrado'
+          estado_salida?: 'abierto' | 'cerrado'
+          estado_recojo?: 'abierto' | 'cerrado'
           cerrado_por?: string | null
           cerrado_at?: string | null
+          cerrado_salida_at?: string | null
+          cerrado_recojo_at?: string | null
           created_at?: string | null
         }
         Update: {
           id?: string
           fecha?: string
           estado?: 'abierto' | 'cerrado'
+          estado_salida?: 'abierto' | 'cerrado'
+          estado_recojo?: 'abierto' | 'cerrado'
           cerrado_por?: string | null
           cerrado_at?: string | null
+          cerrado_salida_at?: string | null
+          cerrado_recojo_at?: string | null
           created_at?: string | null
         }
         Relationships: [

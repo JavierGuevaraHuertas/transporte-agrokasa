@@ -122,6 +122,43 @@ export async function setDiaEstado(
   }
 }
 
+export async function setDiaEstadoTipo(
+  fecha: string,
+  tipo: 'SALIDA' | 'RECOJO',
+  estado: 'abierto' | 'cerrado'
+) {
+  const existing = await getDia(fecha)
+  const ahora = estado === 'cerrado' ? new Date().toISOString() : null
+
+  if (existing) {
+    if (tipo === 'SALIDA') {
+      const { error } = await supabase
+        .from('dias')
+        .update({ estado_salida: estado, cerrado_salida_at: ahora })
+        .eq('fecha', fecha)
+      if (error) throw error
+    } else {
+      const { error } = await supabase
+        .from('dias')
+        .update({ estado_recojo: estado, cerrado_recojo_at: ahora })
+        .eq('fecha', fecha)
+      if (error) throw error
+    }
+  } else {
+    const { error } = await supabase
+      .from('dias')
+      .insert({
+        fecha,
+        estado: 'abierto',
+        estado_salida: tipo === 'SALIDA' ? estado : 'abierto',
+        estado_recojo: tipo === 'RECOJO' ? estado : 'abierto',
+        cerrado_salida_at: tipo === 'SALIDA' ? ahora : null,
+        cerrado_recojo_at: tipo === 'RECOJO' ? ahora : null,
+      })
+    if (error) throw error
+  }
+}
+
 // ── PROGRAMACIONES ──────────────────────────────────────────────────────────
 
 export async function getProgramacionesByUser(usuarioId: string, fecha: string) {

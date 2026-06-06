@@ -18,9 +18,23 @@ interface Props {
   onEdit: (key: string, tipo: TipoProgram, hor: string, area: string) => void
 }
 
+/** Misma lógica que FormPanel: RECOJO en sábado → consultar lunes */
+function calcFechaConsulta(tipo: TipoProgram): string {
+  const now = new Date()
+  const day = now.getDay() // 0=dom, 6=sab
+  if (tipo === 'RECOJO' && day === 6) {
+    const lunes = new Date(now)
+    lunes.setDate(now.getDate() + 2)
+    return lunes.toISOString().slice(0, 10)
+  }
+  return now.toISOString().slice(0, 10)
+}
+
 export default function ListaPanel({ tipo, refresh, onBack, onNew, onEdit }: Props) {
   const { usuario } = useAuth()
   const today = new Date().toISOString().slice(0, 10)
+  const fechaConsulta = calcFechaConsulta(tipo)
+  const esAjuste = fechaConsulta !== today
 
   const [bloq, setBloq] = useState(false)
   const [items, setItems] = useState<Programacion[]>([])
@@ -38,13 +52,14 @@ export default function ListaPanel({ tipo, refresh, onBack, onNew, onEdit }: Pro
         setLoading(true)
 
         const [dia, progs] = await Promise.all([
-          getDia(today),
-          getProgramacionesByUser(usuario.id, today),
+          getDia(fechaConsulta),
+          getProgramacionesByUser(usuario.id, fechaConsulta),
         ])
 
         if (!active) return
 
-        setBloq(dia?.estado === 'cerrado')
+        const estadoTipo = tipo === 'SALIDA' ? dia?.estado_salida : dia?.estado_recojo
+        setBloq(estadoTipo === 'cerrado' || dia?.estado === 'cerrado')
         setItems(progs.filter((x) => x.tipo === tipo))
       } catch (e) {
         console.error('Error cargando programaciones:', e)
@@ -60,7 +75,7 @@ export default function ListaPanel({ tipo, refresh, onBack, onNew, onEdit }: Pro
     void cargar()
 
     return () => { active = false }
-  }, [usuario, today, tipo, refresh])
+  }, [usuario, fechaConsulta, tipo, refresh])
 
   if (!usuario) return null
 
@@ -153,6 +168,10 @@ export default function ListaPanel({ tipo, refresh, onBack, onNew, onEdit }: Pro
         <td style="${td('font-weight:900;color:#14532d;background:#bbf7d0;border-left:2px solid #6ee7b7;')}">${grandTotal}</td>
       </tr>`
 
+      const fechaProgLabel = new Date(m.fecha + 'T12:00:00').toLocaleDateString('es-PE', {
+        weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
+      })
+
       const html = `<html><head><meta charset="utf-8">
       <style>
         body{font-family:Arial,sans-serif;margin:0;background:#f3f4f6;color:#111827;padding:24px}
@@ -165,7 +184,7 @@ export default function ListaPanel({ tipo, refresh, onBack, onNew, onEdit }: Pro
       </head><body>
         <div class="image-card">
           <div class="header">
-            <div><h2 style="margin:0 0 6px;font-size:18px;font-weight:800">Programación de Transporte — ${tipo === 'SALIDA' ? 'SALIDA' : 'INGRESO'}</h2></div>
+            <div><h2 style="margin:0 0 6px;font-size:18px;font-weight:800">Programación de Transporte — ${tipo === 'SALIDA' ? 'SALIDA' : 'INGRESO'}</h2><p style="margin:0;font-size:13px;font-weight:600;color:#374151;text-transform:capitalize">${fechaProgLabel}</p></div>
             <div class="meta">Fecha: ${fecha}<br>Supervisor: ${usuario.nombre}</div>
           </div>
           <div style="margin:10px 0 14px;padding:9px 14px;background:${colorLight};border-left:4px solid ${color};border-radius:8px;display:inline-block">
@@ -255,6 +274,10 @@ export default function ListaPanel({ tipo, refresh, onBack, onNew, onEdit }: Pro
         return `<td style="${td('font-weight:900;color:#14532d;background:#bbf7d0;')}">${v || ''}</td>`
       }).join('')}<td style="${td('font-weight:900;color:#14532d;background:#bbf7d0;')}">${grandTotal}</td></tr>`
 
+      const fechaProgLabel = new Date(m.fecha + 'T12:00:00').toLocaleDateString('es-PE', {
+        weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
+      })
+
       const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
       <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"><\/script>
       <style>
@@ -264,7 +287,10 @@ export default function ListaPanel({ tipo, refresh, onBack, onNew, onEdit }: Pro
       </head><body>
         <div id="reporte" style="background:#fff;border-radius:16px;padding:18px;max-width:1200px;">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
-            <h2 style="margin:0 0 6px;font-size:18px;font-weight:800">Programación de Transporte — ${tipo === 'SALIDA' ? 'SALIDA' : 'INGRESO'}</h2>
+            <div>
+              <h2 style="margin:0 0 4px;font-size:18px;font-weight:800">Programación de Transporte — ${tipo === 'SALIDA' ? 'SALIDA' : 'INGRESO'}</h2>
+              <p style="margin:0;font-size:13px;font-weight:600;color:#374151;text-transform:capitalize">${fechaProgLabel}</p>
+            </div>
             <div style="text-align:right;font-size:12px;color:#555;line-height:1.45">Fecha: ${fecha}<br>Supervisor: ${usuario!.nombre}</div>
           </div>
           <div style="margin:10px 0 14px;padding:9px 14px;background:${colorLight};border-left:4px solid ${color};border-radius:8px;display:inline-block">
@@ -331,9 +357,16 @@ export default function ListaPanel({ tipo, refresh, onBack, onNew, onEdit }: Pro
       </div>
 
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-sm font-bold text-gray-900">
-          {tipo === 'SALIDA' ? 'Salida' : 'Ingreso'}
-        </h2>
+        <div>
+          <h2 className="text-sm font-bold text-gray-900">
+            {tipo === 'SALIDA' ? 'Salida' : 'Ingreso'}
+          </h2>
+          {esAjuste && (
+            <p className="text-xs text-amber-600 mt-0.5">
+              📅 Mostrando programaciones del lunes
+            </p>
+          )}
+        </div>
         <button
           onClick={onNew}
           disabled={bloq}
@@ -418,7 +451,6 @@ export default function ListaPanel({ tipo, refresh, onBack, onNew, onEdit }: Pro
         </div>
       )}
 
-      {/* Modal de confirmación de eliminación */}
       {confirmItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
           <div className="bg-white rounded-2xl shadow-xl p-5 w-full max-w-sm">
