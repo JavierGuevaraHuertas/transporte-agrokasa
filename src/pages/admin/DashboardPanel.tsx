@@ -5,7 +5,6 @@ import { ALLP, AGK, AGR, RUTAS, getRid } from '../../utils/constants'
 import {
   getAllUsuarios,
   getDia,
-  setDiaEstado,
   setDiaEstadoTipo,
   getAllProgramaciones,
   getProgramacionDetalle,
@@ -945,8 +944,6 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
     const thS = (extra?: any): any => ({ font: { bold: true, color: { rgb: WHITE }, sz: 9 }, fill: { fgColor: { rgb: DARK_BLUE } }, border: brd, alignment: { horizontal: 'center', vertical: 'center', wrapText: true }, ...extra })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const thAgS = (extra?: any): any => ({ font: { bold: true, color: { rgb: WHITE }, sz: 9 }, fill: { fgColor: { rgb: MID_BLUE } }, border: brd, alignment: { horizontal: 'center', vertical: 'center' }, ...extra })
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const tdS = (extra?: any): any => ({ font: { sz: 9 }, border: brd, alignment: { horizontal: 'center', vertical: 'center' }, ...extra })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const grandS = (extra?: any): any => ({ font: { bold: true, color: { rgb: WHITE }, sz: 9 }, fill: { fgColor: { rgb: DARK_BLUE } }, border: brdDark, alignment: { horizontal: 'center', vertical: 'center' }, ...extra })
 
