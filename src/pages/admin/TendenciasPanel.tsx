@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import {
   Chart,
   CategoryScale,
@@ -72,7 +72,7 @@ export default function TendenciasPanel({ refresh }: Props) {
   }
 
   const toggleArea = (a: string) =>
-    setVisible((prev) => ({ ...prev, [a]: prev[a] === false ? true : false }))
+    setVisible((prev: Record<string, boolean>) => ({ ...prev, [a]: prev[a] === false ? true : false }))
 
   // Load programaciones (totals only)
   useEffect(() => {
@@ -108,10 +108,10 @@ export default function TendenciasPanel({ refresh }: Props) {
     async function cargarDetalles() {
       try {
         const enriched: ProgDetail[] = await Promise.all(
-          all.map(async (p) => {
+          all.map(async (p: ProgTrend) => {
             const detalle = await getProgramacionDetalle(p.id)
             const parData: Record<string, number> = {}
-            detalle.forEach((row) => {
+            detalle.forEach((row: any) => {
               parData[row.paradero] = (parData[row.paradero] || 0) + (row.cantidad || 0)
             })
             return { ...p, parData }
@@ -132,52 +132,52 @@ export default function TendenciasPanel({ refresh }: Props) {
 
   // Init visible
   useEffect(() => {
-    const filtered = all.filter((m) => (tipo === 'ALL' || m.tipo === tipo) && m.fecha >= desde && m.fecha <= hasta)
-    const areas = [...new Set(filtered.map((x) => x.area))].sort()
-    setVisible((prev) => {
+    const filtered = all.filter((m: ProgTrend) => (tipo === 'ALL' || m.tipo === tipo) && m.fecha >= desde && m.fecha <= hasta)
+    const areas: string[] = Array.from<string>(new Set(filtered.map((x: ProgTrend) => x.area))).sort()
+    setVisible((prev: Record<string, boolean>) => {
       const next = { ...prev }
-      areas.forEach((a) => { if (next[a] === undefined) next[a] = true })
+      areas.forEach((a: string) => { if (next[a] === undefined) next[a] = true })
       return next
     })
   }, [all, tipo, desde, hasta])
 
   // Filtered data
   const filtered = useMemo(() =>
-    all.filter((m) => (tipo === 'ALL' || m.tipo === tipo) && m.fecha >= desde && m.fecha <= hasta),
+    all.filter((m: ProgTrend) => (tipo === 'ALL' || m.tipo === tipo) && m.fecha >= desde && m.fecha <= hasta),
     [all, tipo, desde, hasta]
   )
   const filteredDetails = useMemo(() =>
-    details.filter((m) => (tipo === 'ALL' || m.tipo === tipo) && m.fecha >= desde && m.fecha <= hasta),
+    details.filter((m: ProgDetail) => (tipo === 'ALL' || m.tipo === tipo) && m.fecha >= desde && m.fecha <= hasta),
     [details, tipo, desde, hasta]
   )
-  const areas = useMemo(() => [...new Set(filtered.map((x) => x.area))].sort(), [filtered])
+  const areas = useMemo(() => Array.from<string>(new Set(filtered.map((x: ProgTrend) => x.area))).sort(), [filtered])
 
   // KPIs
-  const totalPersonas = useMemo(() => filtered.reduce((a, x) => a + x.total, 0), [filtered])
-  const totalDias = useMemo(() => new Set(filtered.map((x) => x.fecha)).size, [filtered])
+  const totalPersonas = useMemo(() => filtered.reduce((a: number, x: ProgTrend) => a + x.total, 0), [filtered])
+  const totalDias = useMemo(() => Array.from<string>(new Set(filtered.map((x: ProgTrend) => x.fecha))).length, [filtered])
   const topArea = useMemo(() => {
     const byArea: Record<string, number> = {}
-    filtered.forEach((x) => { byArea[x.area] = (byArea[x.area] || 0) + x.total })
-    return Object.entries(byArea).sort((a, b) => b[1] - a[1])[0]
+    filtered.forEach((x: ProgTrend) => { byArea[x.area] = (byArea[x.area] || 0) + x.total })
+    return Object.entries(byArea).sort((a: [string,number], b: [string,number]) => b[1] - a[1])[0] as [string, number] | undefined
   }, [filtered])
 
   // Top paraderos
-  const topParaderos = useMemo(() => {
+  const topParaderos = useMemo((): [string, number][] => {
     const byPar: Record<string, number> = {}
-    filteredDetails.forEach((m) => {
-      Object.entries(m.parData).forEach(([p, v]) => { byPar[p] = (byPar[p] || 0) + v })
+    filteredDetails.forEach((m: ProgDetail) => {
+      Object.entries(m.parData).forEach(([p, v]: [string, number]) => { byPar[p] = (byPar[p] || 0) + v })
     })
-    return Object.entries(byPar).sort((a, b) => b[1] - a[1]).slice(0, 10)
+    return Object.entries(byPar).sort((a: [string,number], b: [string,number]) => b[1] - a[1]).slice(0, 10)
   }, [filteredDetails])
 
   // Top agrupadores
-  const topAgrupadores = useMemo(() => {
+  const topAgrupadores = useMemo((): [string, number][] => {
     const byAg: Record<string, number> = {}
-    AGK.forEach((ag) => { byAg[ag] = 0 })
-    filteredDetails.forEach((m) => {
-      ALLP.forEach(({ ag, p }) => { byAg[ag] = (byAg[ag] || 0) + (m.parData[p] || 0) })
+    AGK.forEach((ag: string) => { byAg[ag] = 0 })
+    filteredDetails.forEach((m: ProgDetail) => {
+      ALLP.forEach(({ ag, p }: { ag: string; p: string }) => { byAg[ag] = (byAg[ag] || 0) + (m.parData[p] || 0) })
     })
-    return Object.entries(byAg).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1])
+    return Object.entries(byAg).filter(([, v]: [string, number]) => v > 0).sort((a: [string,number], b: [string,number]) => b[1] - a[1])
   }, [filteredDetails])
 
   const maxPar = topParaderos[0]?.[1] || 1
@@ -185,16 +185,16 @@ export default function TendenciasPanel({ refresh }: Props) {
 
   // Charts
   useEffect(() => {
-    const weeks = [...new Set(filtered.map((m) => getWeekKey(m.fecha)))].sort()
+    const weeks: string[] = Array.from<string>(new Set(filtered.map((m: ProgTrend) => getWeekKey(m.fecha)))).sort()
     const byAW: Record<string, Record<string, number>> = {}
-    areas.forEach((a) => { byAW[a] = {}; weeks.forEach((w) => { byAW[a][w] = 0 }) })
-    filtered.forEach((m) => {
+    areas.forEach((a: string) => { byAW[a] = {}; weeks.forEach((w: string) => { byAW[a][w] = 0 }) })
+    filtered.forEach((m: ProgTrend) => {
       const wk = getWeekKey(m.fecha)
       if (byAW[m.area]) byAW[m.area][wk] = (byAW[m.area][wk] || 0) + m.total
     })
-    const labels = weeks.map(fmtWeek)
-    const visAreas = areas.filter((a) => visible[a] !== false)
-    const datasets = visAreas.map((a) => {
+    const labels: string[] = weeks.map(fmtWeek)
+    const visAreas = areas.filter((a: string) => visible[a] !== false)
+    const datasets = visAreas.map((a: string) => {
       const col = AREA_COLORS[areas.indexOf(a) % AREA_COLORS.length]
       return { label: a, data: weeks.map((w) => byAW[a][w] || 0), borderColor: col, backgroundColor: col + '22', borderWidth: 2, pointRadius: 3, tension: 0.3, fill: false }
     })
@@ -206,16 +206,16 @@ export default function TendenciasPanel({ refresh }: Props) {
         options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } }, scales: { x: { grid: { color: '#f3f4f6' }, ticks: { font: { size: 10 }, color: '#9ca3af' } }, y: { grid: { color: '#f3f4f6' }, ticks: { font: { size: 10 }, color: '#9ca3af' }, beginAtZero: true } } },
       })
     }
-    const totByArea = areas.filter((a) => visible[a] !== false)
-      .map((a) => ({ a, t: Object.values(byAW[a]).reduce((x, y) => x + y, 0) }))
-      .sort((x, y) => y.t - x.t)
+    const totByArea = areas.filter((a: string) => visible[a] !== false)
+      .map((a: string): { a: string; t: number } => ({ a, t: (Object.values(byAW[a]) as number[]).reduce((x: number, y: number) => x + y, 0) }))
+      .sort((x: {a:string;t:number}, y: {a:string;t:number}) => y.t - x.t)
     if (barRef.current) {
       if (barChart.current) barChart.current.destroy()
       barChart.current = new Chart(barRef.current, {
         type: 'bar',
         data: {
-          labels: totByArea.map((x) => x.a.length > 12 ? x.a.slice(0, 11) + '…' : x.a),
-          datasets: [{ data: totByArea.map((x) => x.t), backgroundColor: totByArea.map((x) => AREA_COLORS[areas.indexOf(x.a) % AREA_COLORS.length] + 'cc'), borderRadius: 6 }],
+          labels: totByArea.map((x: {a:string;t:number}) => x.a.length > 12 ? x.a.slice(0, 11) + '…' : x.a),
+          datasets: [{ data: totByArea.map((x: {a:string;t:number}) => x.t), backgroundColor: totByArea.map((x: {a:string;t:number}) => AREA_COLORS[areas.indexOf(x.a) % AREA_COLORS.length] + 'cc'), borderRadius: 6 }],
         },
         options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false }, ticks: { font: { size: 9 }, color: '#9ca3af' } }, y: { grid: { color: '#f3f4f6' }, ticks: { font: { size: 10 }, color: '#9ca3af' }, beginAtZero: true } } },
       })
@@ -242,7 +242,7 @@ export default function TendenciasPanel({ refresh }: Props) {
         <div className="flex gap-3 flex-wrap items-end">
           <div>
             <label className="block text-xs font-semibold text-gray-500 mb-1">Tipo</label>
-            <select value={tipo} onChange={(e) => setTipo(e.target.value)} className="input-base text-xs w-auto">
+            <select value={tipo} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setTipo(e.target.value)} className="input-base text-xs w-auto">
               <option value="ALL">Salida + Ingreso</option>
               <option value="SALIDA">Solo Salida</option>
               <option value="RECOJO">Solo Ingreso</option>
@@ -250,11 +250,11 @@ export default function TendenciasPanel({ refresh }: Props) {
           </div>
           <div>
             <label className="block text-xs font-semibold text-gray-500 mb-1">Desde</label>
-            <input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} className="input-base text-xs w-auto" />
+            <input type="date" value={desde} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDesde(e.target.value)} className="input-base text-xs w-auto" />
           </div>
           <div>
             <label className="block text-xs font-semibold text-gray-500 mb-1">Hasta</label>
-            <input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} className="input-base text-xs w-auto" />
+            <input type="date" value={hasta} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setHasta(e.target.value)} className="input-base text-xs w-auto" />
           </div>
         </div>
       </div>
@@ -266,7 +266,7 @@ export default function TendenciasPanel({ refresh }: Props) {
             { label: 'Total personas', value: totalPersonas.toLocaleString(), cls: tipoColor },
             { label: 'Días con datos', value: totalDias, cls: 'text-gray-700' },
             { label: 'Área líder', value: topArea?.[0]?.split(' ').slice(0, 2).join(' ') || '—', cls: 'text-purple-600', sub: topArea ? `${topArea[1].toLocaleString()} pers.` : '' },
-            { label: tipoLabel, value: [...new Set(filtered.map(x => x.area))].length + ' áreas', cls: 'text-green-600', sub: `${filtered.length} prog.` },
+            { label: tipoLabel, value: Array.from<string>(new Set(filtered.map((x: ProgTrend) => x.area))).length + ' áreas', cls: 'text-green-600', sub: `${filtered.length} prog.` },
           ].map((m) => (
             <div key={m.label} className="card py-2 px-3">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">{m.label}</p>
@@ -282,7 +282,7 @@ export default function TendenciasPanel({ refresh }: Props) {
         <div className="card mb-3">
           <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Áreas visibles</p>
           <div className="flex gap-2 flex-wrap">
-            {areas.map((a, i) => {
+            {areas.map((a: string, i: number) => {
               const col = AREA_COLORS[i % AREA_COLORS.length]
               const off = visible[a] === false
               return (
@@ -332,9 +332,9 @@ export default function TendenciasPanel({ refresh }: Props) {
             <p className="text-center py-6 text-gray-300 text-xs">{loadingDetail ? 'Calculando…' : 'Sin datos'}</p>
           ) : (
             <div className="flex flex-col gap-1.5">
-              {topParaderos.map(([par, val], i) => {
+              {topParaderos.map(([par, val]: [string, number], i: number) => {
                 const pct = Math.round((val / maxPar) * 100)
-                const ag = ALLP.find((x) => x.p === par)?.ag || ''
+                const ag = ALLP.find((x: {ag: string; p: string}) => x.p === par)?.ag || ''
                 return (
                   <div key={par} className="flex items-center gap-2">
                     <span className="text-xs font-bold text-gray-300 w-4 text-right">{i + 1}</span>
@@ -371,12 +371,12 @@ export default function TendenciasPanel({ refresh }: Props) {
             <p className="text-center py-6 text-gray-300 text-xs">{loadingDetail ? 'Calculando…' : 'Sin datos'}</p>
           ) : (
             <div className="flex flex-col gap-2">
-              {topAgrupadores.map(([ag, val], i) => {
+              {topAgrupadores.map(([ag, val]: [string, number], i: number) => {
                 const pct = Math.round((val / maxAg) * 100)
                 const ZONE_COLORS = ['#1a7a3c','#2563eb','#dc2626','#d97706','#7c3aed','#0891b2','#db2777','#65a30d','#ea580c','#0284c7']
                 const col = ZONE_COLORS[i % ZONE_COLORS.length]
                 // Count paraderos in this zone
-                const parCount = ALLP.filter((x) => x.ag === ag && topParaderos.some(([p]) => p === x.p)).length
+                const parCount = ALLP.filter((x: {ag: string; p: string}) => x.ag === ag && topParaderos.some(([p]: [string, number]) => p === x.p)).length
                 return (
                   <div key={ag} className="flex items-center gap-2">
                     <div className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: col }} />
