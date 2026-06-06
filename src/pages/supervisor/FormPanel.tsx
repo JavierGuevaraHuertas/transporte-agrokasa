@@ -245,7 +245,6 @@ export default function FormPanel({ formState, onBack, onSaved }: Props) {
     month: 'long',
   })
 
-  const esAjusteFecha = fechaProgram !== today
 
   return (
     <div>
