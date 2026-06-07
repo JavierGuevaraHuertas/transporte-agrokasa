@@ -887,20 +887,22 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
       })
     })
 
-    // Ruta spans
+    // Ruta spans — use unique key per group (rutaDisplay rows are their own group)
+    const rutaGroupKey = (f: FilaXL) => f.rutaDisplay !== undefined ? `__rd__${f.rutaDisplay}` : f.ruta
     const rutaSpan: Record<string, number> = {}
-    filasMap.forEach((f) => { rutaSpan[f.ruta] = (rutaSpan[f.ruta]||0)+1 })
+    filasMap.forEach((f) => { const k = rutaGroupKey(f); rutaSpan[k] = (rutaSpan[k]||0)+1 })
     const rutaStartRow: Record<string, number> = {}
 
     filasMap.forEach((fila, fi) => {
       c = 0
-      const isFirstRuta = rutaStartRow[fila.ruta] === undefined
+      const gk = rutaGroupKey(fila)
+      const isFirstRuta = rutaStartRow[gk] === undefined
       if (isFirstRuta) {
-        rutaStartRow[fila.ruta] = r
-        sc(r, c, fila.rutaDisplay || fila.ruta, fila.rutaDisplay
+        rutaStartRow[gk] = r
+        sc(r, c, fila.rutaDisplay !== undefined ? fila.rutaDisplay : fila.ruta, fila.rutaDisplay !== undefined
           ? tdS({fill:{fgColor:{rgb:'f3f4f6'}},font:{bold:true,color:{rgb:'6b7280'},sz:9}})
           : tdS({fill:{fgColor:{rgb:BLUE_PALE}},font:{bold:true,color:{rgb:'2563eb'},sz:9}}))
-        if (rutaSpan[fila.ruta] > 1) addMerge(r, 0, r+rutaSpan[fila.ruta]-1, 0)
+        if (rutaSpan[gk] > 1) addMerge(r, 0, r+rutaSpan[gk]-1, 0)
       }
       c++
       const bg = fi%2===0 ? WHITE : 'f9fafb'
