@@ -29,4 +29,5 @@ export interface FilaRuta {
   l?: number
   c?: number
   lbl?: string
+  rutaDisplay?: string
 }
