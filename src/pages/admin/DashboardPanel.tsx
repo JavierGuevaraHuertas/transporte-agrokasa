@@ -392,7 +392,7 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
     XLSX.writeFile(wb, `area_${tipoLabel.toLowerCase()}_${new Date().toISOString().slice(0, 10)}.xlsx`)
   }
 
-  const exportarReporteRutas = (filtroTipo: 'SALIDA' | 'RECOJO') => {
+  const _exportarReporteRutas = (filtroTipo: 'SALIDA' | 'RECOJO') => {
     const fecha = new Date().toLocaleDateString('es-PE', { weekday: 'short', day: '2-digit', month: '2-digit', year: '2-digit' })
     const color = filtroTipo === 'SALIDA' ? '#d97706' : '#2563eb'
     const colorLight = filtroTipo === 'SALIDA' ? '#fef3c7' : '#dbeafe'
@@ -642,7 +642,7 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
     if (win) { win.document.write(html); win.document.close(); win.focus() }
   }
 
-  const exportarExcelRutas = (filtroTipo: 'SALIDA' | 'RECOJO') => {
+  const _exportarExcelRutas = (filtroTipo: 'SALIDA' | 'RECOJO') => {
     const fecha = new Date().toLocaleDateString('es-PE', { weekday: 'short', day: '2-digit', month: '2-digit', year: '2-digit' })
     const tipoLabel = filtroTipo === 'SALIDA' ? 'SALIDA' : 'INGRESO'
     const allFiltrado = all.filter((m) => m.tipo === filtroTipo)
@@ -720,7 +720,7 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
     XLSX.writeFile(wb, `ruta_${tipoLabel.toLowerCase()}_${new Date().toISOString().slice(0, 10)}.xlsx`)
   }
 
-  const exportarExcelComedores = (filtroTipo: 'SALIDA' | 'RECOJO') => {
+  const _exportarExcelComedores = (filtroTipo: 'SALIDA' | 'RECOJO') => {
     const fecha = new Date().toLocaleDateString('es-PE', { weekday: 'short', day: '2-digit', month: '2-digit', year: '2-digit' })
     const tipoLabel = filtroTipo === 'SALIDA' ? 'SALIDA' : 'INGRESO'
     const allFiltrado = all.filter((m) => m.tipo === filtroTipo)
