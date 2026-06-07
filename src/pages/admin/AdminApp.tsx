@@ -7,8 +7,9 @@ import ConsolidadoPanel from './ConsolidadoPanel'
 import SupervisoresPanel from './SupervisoresPanel'
 import UsuariosPanel from './UsuariosPanel'
 import TendenciasPanel from './TendenciasPanel'
+import ConfigPanel from './ConfigPanel'
 
-type AdminTab = 'dashboard' | 'consolidado' | 'supervisores' | 'usuarios' | 'tendencias'
+type AdminTab = 'dashboard' | 'consolidado' | 'supervisores' | 'usuarios' | 'tendencias' | 'config'
 
 const TABS: { id: AdminTab; label: string; icon: string }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: '⊞' },
@@ -16,6 +17,7 @@ const TABS: { id: AdminTab; label: string; icon: string }[] = [
   { id: 'supervisores', label: 'Supervisores', icon: '👥' },
   { id: 'usuarios', label: 'Usuarios', icon: '👤' },
   { id: 'tendencias', label: 'Tendencias', icon: '📈' },
+  { id: 'config',     label: 'Configuración', icon: '⚙️' },
 ]
 
 export default function AdminApp() {
@@ -54,6 +56,7 @@ export default function AdminApp() {
           {tab === 'supervisores' && <SupervisoresPanel refresh={refresh} />}
           {tab === 'usuarios' && <UsuariosPanel showToast={showToast} />}
           {tab === 'tendencias' && <TendenciasPanel refresh={refresh} />}
+          {tab === 'config' && <ConfigPanel />}
         </div>
       </div>
 

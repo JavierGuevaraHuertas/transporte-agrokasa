@@ -14,6 +14,7 @@ export interface FormState {
   key: string | null
   hor: string | null
   area: string | null
+  fecha: string | null
 }
 
 export default function SupervisorApp() {
@@ -23,6 +24,7 @@ export default function SupervisorApp() {
     key: null,
     hor: null,
     area: null,
+    fecha: null,
   })
   const [refresh, setRefresh] = useState(0)
   const { toast, showToast, clearToast } = useToast()
@@ -31,9 +33,10 @@ export default function SupervisorApp() {
     tipo: TipoProgram,
     key: string | null,
     hor: string | null,
-    area: string | null
+    area: string | null,
+    fecha: string | null = null
   ) => {
-    setFormState({ tipo, key, hor, area })
+    setFormState({ tipo, key, hor, area, fecha })
     setView('form')
   }
 
@@ -66,7 +69,7 @@ export default function SupervisorApp() {
               refresh={refresh}
               onBack={() => setView('menu')}
               onNew={() => goForm(formState.tipo, null, null, null)}
-              onEdit={(key, tipo, hor, area) => goForm(tipo, key, hor, area)}
+              onEdit={(key, tipo, hor, area, fecha) => goForm(tipo, key, hor, area, fecha)}
             />
           )}
 

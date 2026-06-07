@@ -5,6 +5,7 @@ import { AGK, AGR, RUTAS, HOR, ALL_AREAS, getRid } from '../../utils/constants'
 import {
   getUsuarioAreas,
   getDia,
+  getProgramacionById,
   getProgramacionDetalle,
   saveProgramacion,
 } from '../../lib/api'
@@ -37,11 +38,11 @@ export default function FormPanel({ formState, onBack, onSaved }: Props) {
   const { usuario } = useAuth()
   const today = new Date().toISOString().slice(0, 10)
 
-  const { tipo, key: editKey, hor: initHor, area: initArea } = formState
+  const { tipo, key: editKey, hor: initHor, area: initArea, fecha: initFecha } = formState
   const horList = HOR[tipo]
 
   // fecha de programación: ajustada automáticamente para RECOJO en sábado
-  const [fechaProgram, setFechaProgram] = useState<string>(() => calcFechaDefault(tipo))
+  const [fechaProgram, setFechaProgram] = useState<string>(() => initFecha || calcFechaDefault(tipo))
 
   const [areas, setAreas] = useState<string[]>(ALL_AREAS)
   const [hor, setHor] = useState(initHor || horList[0].id)
@@ -51,12 +52,14 @@ export default function FormPanel({ formState, onBack, onSaved }: Props) {
   const [bloq, setBloq] = useState(false)
   const [saving, setSaving] = useState(false)
 
-  // Recalcular fecha por defecto si cambia el tipo
+  // Restaurar fecha del registro al editar, o calcular por defecto para nuevos
   useEffect(() => {
-    if (!editKey) {
+    if (editKey && initFecha) {
+      setFechaProgram(initFecha)
+    } else if (!editKey) {
       setFechaProgram(calcFechaDefault(tipo))
     }
-  }, [tipo, editKey])
+  }, [tipo, editKey, initFecha])
 
   useEffect(() => {
     let active = true
@@ -112,6 +115,11 @@ export default function FormPanel({ formState, onBack, onSaved }: Props) {
       }
 
       try {
+        // Fetch the programacion to get its real fecha
+        const prog = await getProgramacionById(editKey)
+        if (!active) return
+        if (prog?.fecha) setFechaProgram(prog.fecha)
+
         const detalle = await getProgramacionDetalle(editKey)
         if (!active) return
 
@@ -299,8 +307,8 @@ export default function FormPanel({ formState, onBack, onSaved }: Props) {
           </select>
         </div>
 
-        {/* Fecha de programación — solo visible si difiere de hoy */}
-        {tipo === 'RECOJO' && !editKey && (
+        {/* Fecha de programación — siempre visible para RECOJO */}
+        {tipo === 'RECOJO' && (
           <div className="col-span-2">
             <label className="block text-xs font-semibold text-gray-500 mb-1">
               Fecha de programación
@@ -309,7 +317,6 @@ export default function FormPanel({ formState, onBack, onSaved }: Props) {
               <input
                 type="date"
                 value={fechaProgram}
-                min={today}
                 onChange={(e) => setFechaProgram(e.target.value || today)}
                 disabled={bloq || saving}
                 className="input-base flex-1"
@@ -319,7 +326,7 @@ export default function FormPanel({ formState, onBack, onSaved }: Props) {
               </span>
             </div>
             <p className="text-xs text-amber-600 mt-1">
-              📅 Programando recojo para el <span className="font-semibold capitalize">{fechaLabel}</span>. Ajusta si es necesario.
+              📅 Recojo programado para el <span className="font-semibold capitalize">{fechaLabel}</span>. Ajusta si es necesario.
             </p>
           </div>
         )}

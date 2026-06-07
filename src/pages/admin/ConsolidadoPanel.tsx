@@ -176,7 +176,7 @@ export default function ConsolidadoPanel({ refresh }: Props) {
 
     type FilaVis = {
       hor: string; isFirstHor: boolean; horSpan: number
-      ruta: string; isFirstRuta: boolean; rutaSpan: number
+      ruta: string; rutaDisplay?: string; isFirstRuta: boolean; rutaSpan: number
       lote: string; com: string; lbl: string
       pars: Record<string, number>; rowTotal: number
     }
@@ -188,7 +188,10 @@ export default function ConsolidadoPanel({ refresh }: Props) {
       const filasHor: Omit<FilaVis, 'isFirstHor' | 'horSpan'>[] = []
 
       Object.entries(RUTAS).forEach(([ruta, rutaFilas]) => {
-        const filasRuta: Omit<FilaVis, 'isFirstHor' | 'horSpan' | 'isFirstRuta' | 'rutaSpan'>[] = []
+        // Split filas into normal (same ruta) and overridden (rutaDisplay = different group)
+        const filasNormal: Omit<FilaVis, 'isFirstHor' | 'horSpan' | 'isFirstRuta' | 'rutaSpan'>[] = []
+        // Group by rutaDisplay value for overridden rows
+        const filasOverride: Record<string, Omit<FilaVis, 'isFirstHor' | 'horSpan' | 'isFirstRuta' | 'rutaSpan'>[]> = {}
 
         rutaFilas.forEach((fila) => {
           const rutaTxt = ruta.replace('-', '_')
@@ -207,12 +210,27 @@ export default function ConsolidadoPanel({ refresh }: Props) {
           })
 
           if (rowTotal > 0) {
-            filasRuta.push({ hor: h, ruta, lote: fila.lbl ? '' : String(fila.l ?? ''), com: fila.lbl ? '' : String(fila.c ?? ''), lbl: fila.lbl ?? '', pars, rowTotal })
+            const filaEntry = { hor: h, ruta: fila.rutaDisplay || ruta, rutaDisplay: fila.rutaDisplay, lote: fila.lbl ? '' : String(fila.l ?? ''), com: fila.lbl ? '' : String(fila.c ?? ''), lbl: fila.lbl ?? '', pars, rowTotal }
+            if (fila.rutaDisplay) {
+              const key = fila.rutaDisplay
+              if (!filasOverride[key]) filasOverride[key] = []
+              filasOverride[key].push(filaEntry)
+            } else {
+              filasNormal.push(filaEntry)
+            }
           }
         })
 
-        filasRuta.forEach((f, ri) => {
-          filasHor.push({ ...f, isFirstRuta: ri === 0, rutaSpan: filasRuta.length })
+        // Push normal filas grouped under ruta
+        filasNormal.forEach((f, ri) => {
+          filasHor.push({ ...f, isFirstRuta: ri === 0, rutaSpan: filasNormal.length })
+        })
+
+        // Push override groups separately (each rutaDisplay = own group)
+        Object.values(filasOverride).forEach((grupo) => {
+          grupo.forEach((f, ri) => {
+            filasHor.push({ ...f, isFirstRuta: ri === 0, rutaSpan: grupo.length })
+          })
         })
       })
 
@@ -282,7 +300,7 @@ export default function ConsolidadoPanel({ refresh }: Props) {
                       </td>
                     )}
                     {f.isFirstRuta && (
-                      <td rowSpan={f.rutaSpan} className="px-1 py-1.5 text-center font-bold text-blue-600 border-r border-gray-100 align-middle">
+                      <td rowSpan={f.rutaSpan} className={`px-1 py-1.5 text-center font-bold border-r border-gray-100 align-middle ${f.rutaDisplay ? 'text-gray-500' : (f.ruta ? 'text-blue-600' : 'text-gray-300')}`}>
                         {f.ruta}
                       </td>
                     )}
@@ -375,8 +393,8 @@ export default function ConsolidadoPanel({ refresh }: Props) {
         rows.push(
           <tr key={rid} className="hover:bg-gray-50">
             {fi === 0 && (
-              <td rowSpan={filas.length} className="px-2 py-1 font-bold text-blue-600 text-xs align-middle sticky left-0 bg-white border-r-2 border-gray-300 z-10" style={{ minWidth: '40px' }}>
-                {ruta}
+              <td rowSpan={filas.length} className={`px-2 py-1 font-bold text-xs align-middle sticky left-0 bg-white border-r-2 border-gray-300 z-10 ${ruta ? 'text-blue-600' : 'text-gray-300'}`} style={{ minWidth: '40px' }}>
+                {filas[0].fila.rutaDisplay || ruta}
               </td>
             )}
             {fila.lbl ? (

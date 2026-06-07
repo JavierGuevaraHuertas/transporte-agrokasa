@@ -184,6 +184,17 @@ export async function getAllProgramaciones(fecha: string) {
   return data
 }
 
+export async function getProgramacionById(id: string) {
+  const { data, error } = await supabase
+    .from('programaciones')
+    .select('*')
+    .eq('id', id)
+    .single()
+
+  if (error) throw error
+  return data as Programacion
+}
+
 export async function getProgramacionDetalle(programacionId: string) {
   const { data, error } = await supabase
     .from('programacion_detalle')
@@ -273,10 +284,11 @@ export async function saveProgramacion(
       throw new Error(`Ya existe una programación para ese horario y área`)
     }
 
-    // Actualizar el registro existente
+    // Actualizar el registro existente (incluyendo fecha en caso de que cambie)
     const { data: prog, error: updErr } = await supabase
       .from('programaciones')
       .update({
+        fecha,
         horario_id: horarioId,
         horario_label: horarioLabel,
         area,

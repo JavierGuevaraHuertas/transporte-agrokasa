@@ -218,10 +218,15 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
     const parHeaders = parHeadersFn(thFn)
 
     const bodyRows = Object.entries(grupos)
-      .map(([_hor, filas]) =>
-        filas.map((f, fi) =>
+      .map(([_hor, filas]) => {
+        // Subtotal per paradero for this horario
+        const horSubTotals: Record<string, number> = {}
+        ALLP.forEach(({ p }) => { horSubTotals[p] = filas.reduce((a, f) => a + (f.data[p] || 0), 0) })
+        const horTotal = filas.reduce((a, f) => a + (f.total || 0), 0)
+
+        const dataRows = filas.map((f, fi) =>
           `<tr>
-          ${fi === 0 ? `<td rowspan="${filas.length}" style="${tdLFn('font-weight:600;vertical-align:middle;background:#f9fafb')}">${f.hor}</td>` : ''}
+          ${fi === 0 ? `<td rowspan="${filas.length + 1}" style="${tdLFn('font-weight:600;vertical-align:middle;background:#f9fafb;border-bottom:2px solid #6ee7b7;')}">${f.hor}</td>` : ''}
           <td style="${tdLFn()}">${f.sup}</td>
           <td style="${tdLFn()}">${f.area}</td>
           ${ALLP.map(({ ag, p }, i) => {
@@ -232,7 +237,19 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
           <td style="${tdFn('font-weight:700;color:#059669;border-left:2px solid #d1d5db;background:#f0fdf4')}">${f.total || ''}</td>
         </tr>`
         ).join('')
-      ).join('')
+
+        const subTotalRow = `<tr style="background:#e8f5e9;">
+          <td colspan="2" style="${tdLFn('font-weight:800;color:#14532d;background:#d4edda;border-top:1px solid #6ee7b7;border-bottom:2px solid #6ee7b7;')}">Sub Total</td>
+          ${ALLP.map(({ ag, p }, i) => {
+            const v = horSubTotals[p] || 0
+            const bl = i > 0 && ALLP[i - 1].ag !== ag ? 'border-left:2px solid #6ee7b7;' : ''
+            return `<td style="${tdFn('font-weight:700;color:#14532d;background:#d4edda;border-top:1px solid #6ee7b7;border-bottom:2px solid #6ee7b7;' + bl + (v ? '' : 'color:#9ca3af;'))}">${v || ''}</td>`
+          }).join('')}
+          <td style="${tdFn('font-weight:800;color:#14532d;background:#bbf7d0;border-left:2px solid #6ee7b7;border-top:1px solid #6ee7b7;border-bottom:2px solid #6ee7b7;')}">${horTotal}</td>
+        </tr>`
+
+        return dataRows + subTotalRow
+      }).join('')
 
     const totalRow = `<tr>
       <td colspan="3" style="${tdLFn('font-weight:800;color:#14532d;background:#bbf7d0')}">TOTAL</td>
@@ -475,7 +492,7 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
     if (win) { win.document.write(html); win.document.close(); win.focus() }
   }
 
-  const exportarReporteComedores = (filtroTipo: 'SALIDA' | 'RECOJO') => {
+  const _exportarReporteComedores = (filtroTipo: 'SALIDA' | 'RECOJO') => {
     const fecha = new Date().toLocaleDateString('es-PE', { weekday: 'short', day: '2-digit', month: '2-digit', year: '2-digit' })
     const color = filtroTipo === 'SALIDA' ? '#d97706' : '#2563eb'
     const colorLight = filtroTipo === 'SALIDA' ? '#fef3c7' : '#dbeafe'
@@ -1009,6 +1026,341 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
     XLSX.writeFile(wb, `paraderos_${tipoLabel.toLowerCase()}_${new Date().toISOString().slice(0, 10)}.xlsx`)
   }
 
+    const exportarReporteComedoresT = (filtroTipo: 'SALIDA' | 'RECOJO') => {
+    const fechaBase = filtroTipo === 'SALIDA' ? dateSalida : dateRecojo
+    const fechaDisplay = new Date(fechaBase + 'T12:00:00').toLocaleDateString('es-PE', { weekday: 'short', day: '2-digit', month: '2-digit', year: '2-digit' })
+    const color = filtroTipo === 'SALIDA' ? '#d97706' : '#2563eb'
+    const colorLight = filtroTipo === 'SALIDA' ? '#fef3c7' : '#dbeafe'
+    const tipoLabel = filtroTipo === 'SALIDA' ? 'SALIDA' : 'INGRESO'
+
+    const allFiltrado = all.filter((m) => m.tipo === filtroTipo)
+    const hors = sortHorarios(Array.from<string>(new Set(allFiltrado.map((m: ProgUI) => m.hor))), filtroTipo)
+
+    // Areas por horario (solo las que tienen datos en ese horario)
+    const areasByHor: Record<string, string[]> = {}
+    hors.forEach((h) => {
+      const progsHor = allFiltrado.filter((m: ProgUI) => m.hor === h)
+      areasByHor[h] = [...new Set(progsHor.map((m: ProgUI) => m.area))].sort()
+    })
+    const totalAreasByHor: Record<string, number> = {}
+    hors.forEach((h) => { totalAreasByHor[h] = areasByHor[h].length + 1 }) // +1 for subtotal col
+
+    const th = (extra = '') => `background:#1a7a3c;color:white;padding:4px 6px;font-size:9px;text-align:center;vertical-align:middle;border:1px solid #155e30;${extra}`
+    const thD = (extra = '') => `background:#155e30;color:white;padding:3px 4px;font-size:8px;text-align:center;vertical-align:middle;border:1px solid #0f4f28;${extra}`
+    const td = (extra = '') => `padding:3px 5px;font-size:9px;border:1px solid #e5e7eb;text-align:center;vertical-align:middle;${extra}`
+
+    // Build data: ruta/fila → horario → area → cantidad
+    type FilaData = {
+      ruta: string; lote: string; com: string; lbl: string; rutaDisplay?: string
+      vals: Record<string, Record<string, number>> // hor → area → qty
+      horSubTotals: Record<string, number>
+      grandTotal: number
+    }
+    const filasMap: FilaData[] = []
+    // Grand totals per hor+area
+    const horAreaGrandTotals: Record<string, Record<string, number>> = {}
+    hors.forEach((h) => { horAreaGrandTotals[h] = {}; areasByHor[h].forEach((a) => { horAreaGrandTotals[h][a] = 0 }) })
+    const horSubGrandTotals: Record<string, number> = {}
+    hors.forEach((h) => { horSubGrandTotals[h] = 0 })
+    let grandTotal = 0
+
+    Object.entries(RUTAS).forEach(([ruta, rutaFilas]) => {
+      rutaFilas.forEach((fila) => {
+        const rutaTxt = ruta.replace('-', '_')
+        const ridData = fila.lbl ? `${rutaTxt}_${fila.lbl}` : `${rutaTxt}_${fila.l ?? 0}_${fila.c ?? 0}`
+        const vals: Record<string, Record<string, number>> = {}
+        const horSubTotals: Record<string, number> = {}
+        let rowTotal = 0
+
+        hors.forEach((hor) => {
+          vals[hor] = {}
+          let horSub = 0
+          areasByHor[hor].forEach((area) => {
+            const progsHorArea = allFiltrado.filter((m: ProgUI) => m.hor === hor && m.area === area)
+            let s = 0
+            progsHorArea.forEach((m: ProgUI) => {
+              Object.keys(m.data).forEach((ck) => { if (ck.startsWith(ridData + '||')) s += m.data[ck] || 0 })
+            })
+            vals[hor][area] = s
+            horSub += s
+            horAreaGrandTotals[hor][area] = (horAreaGrandTotals[hor][area] || 0) + s
+          })
+          horSubTotals[hor] = horSub
+          horSubGrandTotals[hor] = (horSubGrandTotals[hor] || 0) + horSub
+          rowTotal += horSub
+        })
+
+        if (rowTotal > 0) {
+          // Use rutaDisplay as the grouping key if set (separate group from main ruta)
+          const displayRuta = fila.rutaDisplay || ruta
+          filasMap.push({ ruta: displayRuta, lote: fila.lbl ? '' : String(fila.l ?? ''), com: fila.lbl ? '' : String(fila.c ?? ''), lbl: fila.lbl ?? '', rutaDisplay: fila.rutaDisplay, vals, horSubTotals, grandTotal: rowTotal })
+          grandTotal += rowTotal
+        }
+      })
+    })
+
+    // Header row 1: RUTA | LOTE | COM | TOTAL | [hor1 colspan] | [hor2 colspan] ...
+    const horHeaderRow1 = hors.map((h) =>
+      `<th colspan="${totalAreasByHor[h]}" style="${th('border-left:2px solid #0d5225;font-size:9px;background:#155e30;')}">${h}</th>`
+    ).join('')
+
+    // Header row 2: areas under each hor + subtotal col
+    const horHeaderRow2 = hors.map((h) => {
+      const areaCols = areasByHor[h].map((a) =>
+        `<th style="${thD('width:26px;min-width:26px;max-width:26px;padding:0;')}">
+          <div style="height:80px;display:flex;align-items:center;justify-content:center;">
+            <span style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:8px;line-height:1.2;">${a}</span>
+          </div>
+        </th>`
+      ).join('')
+      const subTotalCol = `<th style="${thD('min-width:30px;font-weight:800;background:#0f4f28;border-left:1px solid #6ee7b7;')}">Sub<br/>Total</th>`
+      return areaCols + subTotalCol
+    }).join('')
+
+    // Build ruta spans
+    const rutaSpan: Record<string, number> = {}
+    filasMap.forEach((f) => { rutaSpan[f.ruta] = (rutaSpan[f.ruta] || 0) + 1 })
+    const rutaRendered = new Set<string>()
+
+    const bodyRows = filasMap.map((fila, idx) => {
+      const isFirstRuta = !rutaRendered.has(fila.ruta)
+      if (isFirstRuta) rutaRendered.add(fila.ruta)
+      const even = idx % 2 === 0 ? 'background:#ffffff;' : 'background:#f9fafb;'
+      const borderTop = isFirstRuta ? 'border-top:2px solid #bbf7d0;' : ''
+
+      const rutaCell = isFirstRuta
+        ? `<td rowspan="${rutaSpan[fila.ruta]}" style="${td((!fila.rutaDisplay ? 'font-weight:700;color:#2563eb;background:#eff6ff;' : 'font-weight:700;color:#6b7280;background:#f3f4f6;') + 'border-right:2px solid #bfdbfe;' + borderTop)}">${fila.rutaDisplay || fila.ruta}</td>` : ''
+      const loteComCells = fila.lbl
+        ? `<td colspan="2" style="${td('color:#6b7280;font-style:italic;text-align:left;' + even + borderTop)}">${fila.lbl}</td>`
+        : `<td style="${td(even + borderTop)}">${fila.lote}</td><td style="${td(even + borderTop)}">${fila.com}</td>`
+      const totalCell = `<td style="${td('font-weight:700;color:#059669;background:#f0fdf4;border-left:2px solid #6ee7b7;border-right:2px solid #6ee7b7;' + borderTop)}">${fila.grandTotal}</td>`
+
+      const horCells = hors.map((h) => {
+        const areaCells = areasByHor[h].map((a) => {
+          const v = fila.vals[h]?.[a] || 0
+          return `<td style="${td(even + borderTop + (v ? 'font-weight:600;' : 'color:#d1d5db;'))}">${v || ''}</td>`
+        }).join('')
+        const sub = fila.horSubTotals[h] || 0
+        const subCell = `<td style="${td('font-weight:700;color:#059669;background:#f0fdf4;border-left:1px solid #6ee7b7;' + borderTop)}">${sub || ''}</td>`
+        return areaCells + subCell
+      }).join('')
+
+      return `<tr>${rutaCell}${loteComCells}${totalCell}${horCells}</tr>`
+    }).join('')
+
+    // Total row
+    const totalCells = hors.map((h) => {
+      const areaTotals = areasByHor[h].map((a) => {
+        const v = horAreaGrandTotals[h][a] || 0
+        return `<td style="${td('font-weight:700;color:#14532d;background:#bbf7d0;')}">${v || ''}</td>`
+      }).join('')
+      const sub = horSubGrandTotals[h] || 0
+      return areaTotals + `<td style="${td('font-weight:800;color:#14532d;background:#6ee7b7;border-left:1px solid #059669;')}">${sub || ''}</td>`
+    }).join('')
+
+    const html = `<html><head><meta charset="utf-8">
+    <style>
+      body{font-family:Arial,sans-serif;font-size:9px;margin:16px;background:white}
+      @media print{body{margin:8px} @page{size:landscape;margin:6mm}}
+    </style></head><body>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div>
+          <h2 style="margin:0 0 4px;font-size:13px;font-weight:800">Distribución de personal en comedores</h2>
+          <span style="font-size:11px;font-weight:700;color:${color};padding:2px 10px;background:${colorLight};border-radius:4px;border:1px solid ${color}">${tipoLabel}</span>
+        </div>
+        <span style="font-size:10px;color:#555">Fecha: ${fechaDisplay}</span>
+      </div>
+      <table style="border-collapse:collapse;font-size:9px;width:auto">
+        <thead>
+          <tr>
+            <th style="${th('min-width:40px;')}" rowspan="2">RUTA</th>
+            <th style="${th('min-width:28px;')}" rowspan="2">LOTE</th>
+            <th style="${th('min-width:28px;')}" rowspan="2">COM</th>
+            <th style="${th('min-width:36px;border-left:2px solid #6ee7b7;border-right:2px solid #6ee7b7;')}" rowspan="2">TOTAL</th>
+            ${horHeaderRow1}
+          </tr>
+          <tr>${horHeaderRow2}</tr>
+        </thead>
+        <tbody>
+          ${bodyRows}
+          <tr style="background:#bbf7d0">
+            <td colspan="3" style="${td('font-weight:800;color:#14532d;text-align:left;')}">TOTAL</td>
+            <td style="${td('font-weight:800;color:#14532d;border-left:2px solid #6ee7b7;border-right:2px solid #6ee7b7;')}">${grandTotal}</td>
+            ${totalCells}
+          </tr>
+        </tbody>
+      </table>
+    </body></html>`
+
+    const win = window.open('', '_blank', 'width=1600,height=900')
+    if (win) { win.document.write(html); win.document.close(); win.focus() }
+  }
+
+  const exportarExcelComedoresT = (filtroTipo: 'SALIDA' | 'RECOJO') => {
+    const fechaBase = filtroTipo === 'SALIDA' ? dateSalida : dateRecojo
+    const fechaDisplay = new Date(fechaBase + 'T12:00:00').toLocaleDateString('es-PE', { weekday: 'short', day: '2-digit', month: '2-digit', year: '2-digit' })
+    const tipoLabel = filtroTipo === 'SALIDA' ? 'SALIDA' : 'INGRESO'
+
+    const allFiltrado = all.filter((m: ProgUI) => m.tipo === filtroTipo)
+    const hors = sortHorarios(Array.from<string>(new Set(allFiltrado.map((m: ProgUI) => m.hor))), filtroTipo)
+
+    // Areas por horario (igual que en el HTML)
+    const areasByHor: Record<string, string[]> = {}
+    hors.forEach((h) => {
+      const progsHor = allFiltrado.filter((m: ProgUI) => m.hor === h)
+      areasByHor[h] = Array.from<string>(new Set(progsHor.map((m: ProgUI) => m.area))).sort()
+    })
+
+    const WHITE = 'ffffff', GREEN_DARK = '1a7a3c', GREEN_DARK2 = '0f4f28', GREEN_MID = 'bbf7d0'
+    const GREEN_PALE = 'f0fdf4', GREEN_SUB = 'd4edda', BLUE_PALE = 'eff6ff', GRAY = 'e5e7eb', CYAN = '6ee7b7'
+
+    const brd = { top:{style:'thin',color:{rgb:GRAY}}, bottom:{style:'thin',color:{rgb:GRAY}}, left:{style:'thin',color:{rgb:GRAY}}, right:{style:'thin',color:{rgb:GRAY}} }
+    const brdGreen = { top:{style:'thin',color:{rgb:CYAN}}, bottom:{style:'thin',color:{rgb:CYAN}}, left:{style:'thin',color:{rgb:CYAN}}, right:{style:'thin',color:{rgb:CYAN}} }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const thS = (e?: any): any => ({ font:{bold:true,color:{rgb:WHITE},sz:9}, fill:{fgColor:{rgb:GREEN_DARK}}, border:brd, alignment:{horizontal:'center',vertical:'center',wrapText:true}, ...e })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const thS2 = (e?: any): any => ({ font:{bold:true,color:{rgb:WHITE},sz:8}, fill:{fgColor:{rgb:GREEN_DARK2}}, border:brd, alignment:{horizontal:'center',vertical:'bottom',textRotation:90,wrapText:false}, ...e })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tdS = (e?: any): any => ({ font:{sz:9}, border:brd, alignment:{horizontal:'center',vertical:'center'}, ...e })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const subS = (e?: any): any => ({ font:{bold:true,sz:9,color:{rgb:'14532d'}}, fill:{fgColor:{rgb:GREEN_SUB}}, border:brdGreen, alignment:{horizontal:'center',vertical:'center'}, ...e })
+
+    const wb = XLSX.utils.book_new()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ws: any = {}; const merges: any[] = []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sc = (r: number, c: number, v: string | number, s: any) => { ws[XLSX.utils.encode_cell({r,c})] = {v, t:typeof v==='number'?'n':'s', s} }
+    const addMerge = (r1: number, c1: number, r2: number, c2: number) => merges.push({s:{r:r1,c:c1},e:{r:r2,c:c2}})
+
+    let r = 0
+    sc(r, 0, `Distribución de personal en comedores — ${tipoLabel}`, {font:{bold:true,sz:13},alignment:{horizontal:'left'}}); addMerge(r,0,r,5); r++
+    sc(r, 0, `Fecha: ${fechaDisplay}`, {font:{sz:9,color:{rgb:'555555'}}}); addMerge(r,0,r,5); r++; r++
+
+    const FIXED_COLS = 4 // RUTA, LOTE, COM, TOTAL
+
+    // Header row 1: RUTA | LOTE | COM | TOTAL | [hor colspan(areas+1)] ...
+    let c = 0
+    sc(r, c, 'RUTA', thS()); addMerge(r,c,r+1,c); c++
+    sc(r, c, 'LOTE', thS()); addMerge(r,c,r+1,c); c++
+    sc(r, c, 'COM', thS()); addMerge(r,c,r+1,c); c++
+    sc(r, c, 'TOTAL', thS()); addMerge(r,c,r+1,c); c++
+    hors.forEach((h) => {
+      const span = areasByHor[h].length + 1 // areas + subtotal
+      sc(r, c, h, thS({alignment:{horizontal:'center',vertical:'center'}}))
+      if (span > 1) addMerge(r, c, r, c + span - 1)
+      c += span
+    })
+    r++
+
+    // Header row 2: area subcolumns + Sub Total per hor
+    c = FIXED_COLS
+    hors.forEach((h) => {
+      areasByHor[h].forEach((a) => { sc(r, c++, a, thS2()) })
+      sc(r, c++, 'Sub Total', thS2({fill:{fgColor:{rgb:'0a3d20'}},font:{bold:true,sz:8,color:{rgb:CYAN}}}))
+    })
+    r++
+
+    // Build data: ruta/fila → hor → area → qty
+    type FilaXL = {
+      ruta: string; lote: string; com: string; lbl: string; rutaDisplay?: string
+      vals: Record<string, Record<string, number>>
+      horSubTotals: Record<string, number>
+      rowTotal: number
+    }
+    const filasMap: FilaXL[] = []
+    const horAreaGT: Record<string, Record<string, number>> = {}
+    const horSubGT: Record<string, number> = {}
+    hors.forEach((h) => { horAreaGT[h] = {}; areasByHor[h].forEach((a) => { horAreaGT[h][a] = 0 }); horSubGT[h] = 0 })
+    let grandTotal = 0
+
+    Object.entries(RUTAS).forEach(([ruta, rutaFilas]) => {
+      rutaFilas.forEach((fila) => {
+        const rutaTxt = ruta.replace('-', '_')
+        const ridData = fila.lbl ? `${rutaTxt}_${fila.lbl}` : `${rutaTxt}_${fila.l??0}_${fila.c??0}`
+        const vals: Record<string, Record<string, number>> = {}
+        const horSubTotals: Record<string, number> = {}
+        let rowTotal = 0
+        hors.forEach((hor) => {
+          vals[hor] = {}
+          let sub = 0
+          areasByHor[hor].forEach((area) => {
+            const progsHA = allFiltrado.filter((m: ProgUI) => m.hor === hor && m.area === area)
+            let s = 0
+            progsHA.forEach((m: ProgUI) => { Object.keys(m.data).forEach((ck) => { if (ck.startsWith(ridData+'||')) s += m.data[ck]||0 }) })
+            vals[hor][area] = s; sub += s
+            horAreaGT[hor][area] = (horAreaGT[hor][area]||0) + s
+          })
+          horSubTotals[hor] = sub; horSubGT[hor] = (horSubGT[hor]||0) + sub; rowTotal += sub
+        })
+        if (rowTotal > 0) { filasMap.push({ruta, lote:fila.lbl?'':String(fila.l??''), com:fila.lbl?'':String(fila.c??''), lbl:fila.lbl??'', rutaDisplay: fila.rutaDisplay, vals, horSubTotals, rowTotal}); grandTotal += rowTotal }
+      })
+    })
+
+    // Ruta spans
+    const rutaSpan: Record<string, number> = {}
+    filasMap.forEach((f) => { rutaSpan[f.ruta] = (rutaSpan[f.ruta]||0)+1 })
+    const rutaStartRow: Record<string, number> = {}
+
+    filasMap.forEach((fila, fi) => {
+      c = 0
+      const isFirstRuta = rutaStartRow[fila.ruta] === undefined
+      if (isFirstRuta) {
+        rutaStartRow[fila.ruta] = r
+        sc(r, c, fila.rutaDisplay || fila.ruta, fila.rutaDisplay
+          ? tdS({fill:{fgColor:{rgb:'f3f4f6'}},font:{bold:true,color:{rgb:'6b7280'},sz:9}})
+          : tdS({fill:{fgColor:{rgb:BLUE_PALE}},font:{bold:true,color:{rgb:'2563eb'},sz:9}}))
+        if (rutaSpan[fila.ruta] > 1) addMerge(r, 0, r+rutaSpan[fila.ruta]-1, 0)
+      }
+      c++
+      const bg = fi%2===0 ? WHITE : 'f9fafb'
+      if (fila.lbl) { sc(r,c++,fila.lbl,tdS({font:{italic:true,color:{rgb:'6b7280'},sz:9},fill:{fgColor:{rgb:bg}}})); addMerge(r,1,r,2); c++ }
+      else { sc(r,c++,fila.lote,tdS({fill:{fgColor:{rgb:bg}}})); sc(r,c++,fila.com,tdS({fill:{fgColor:{rgb:bg}}})) }
+      sc(r,c++,fila.rowTotal||'',tdS({font:{bold:true,color:{rgb:'059669'},sz:9},fill:{fgColor:{rgb:GREEN_PALE}}}))
+      hors.forEach((h, hi) => {
+        const hbg = hi%2===0 ? WHITE : 'f0f9ff'
+        areasByHor[h].forEach((a) => {
+          const v = fila.vals[h]?.[a]||0
+          sc(r,c++,v||'',v?tdS({font:{bold:true,sz:9},fill:{fgColor:{rgb:hbg}}}):tdS({font:{color:{rgb:'d1d5db'},sz:9},fill:{fgColor:{rgb:hbg}}}))
+        })
+        const sub = fila.horSubTotals[h]||0
+        sc(r,c++,sub||'',sub?subS():tdS({font:{color:{rgb:'9ca3af'},sz:9},fill:{fgColor:{rgb:GREEN_SUB}}}))
+      })
+      r++
+    })
+
+    // Total row
+    c = 0
+    sc(r,c++,'TOTAL',subS({fill:{fgColor:{rgb:GREEN_MID}}})); addMerge(r,0,r,2); c+=2
+    sc(r,c++,grandTotal,subS({fill:{fgColor:{rgb:GREEN_MID}},font:{bold:true,sz:10,color:{rgb:'14532d'}}}))
+    hors.forEach((h, hi) => {
+      const hbg = hi%2===0 ? GREEN_MID : 'a7f3d0'
+      areasByHor[h].forEach((a) => { const v=horAreaGT[h][a]||0; sc(r,c++,v||'',subS({fill:{fgColor:{rgb:hbg}}})) })
+      sc(r,c++,horSubGT[h]||'',subS({fill:{fgColor:{rgb:'6ee7b7'}},font:{bold:true,sz:9,color:{rgb:'14532d'}}}))
+    })
+
+    const totalCols = FIXED_COLS + hors.reduce((a,h) => a+areasByHor[h].length+1, 0)
+    // Column width: fixed comfortable width for numbers, text is rotated so column width = number readability
+    ws['!cols'] = [
+      {wch:8},   // RUTA
+      {wch:5},   // LOTE
+      {wch:5},   // COM
+      {wch:7},   // TOTAL
+      ...hors.flatMap((h) => [
+        ...areasByHor[h].map(() => ({wch:5})),  // area cols: narrow, numbers fit in 5
+        {wch:8}   // Sub Total: slightly wider
+      ])
+    ]
+    // Row heights: header rows taller to show rotated text fully
+    const maxAreaLen = hors.reduce((max: number, h: string) =>
+      Math.max(max, ...areasByHor[h].map((a: string) => a.length)), 0)
+    const headerHeight = Math.max(80, maxAreaLen * 5.5) // ~5.5pt per char rotated
+    ws['!rows'] = [undefined, undefined, undefined, {hpt:18}, {hpt: headerHeight}]
+    ws['!merges'] = merges
+    ws['!ref'] = XLSX.utils.encode_range({s:{r:0,c:0},e:{r,c:totalCols-1}})
+    XLSX.utils.book_append_sheet(wb, ws, 'Comedores')
+    XLSX.writeFile(wb, `comedores_horario_${tipoLabel.toLowerCase()}_${new Date().toISOString().slice(0,10)}.xlsx`)
+  }
+
     const ResumenCard = ({ tipo }: { tipo: 'SALIDA' | 'RECOJO' }) => {
     const isSal = tipo === 'SALIDA'
     const mine = all.filter((x) => x.tipo === tipo)
@@ -1027,19 +1379,12 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
               📥 XLS área
             </button>
           </div>
+
           <div className="flex gap-1.5">
-            <button onClick={() => exportarReporteRutas(tipo)} className={`flex-1 text-xs font-semibold py-1.5 rounded-lg text-white ${isSal ? 'bg-orange-500 hover:bg-orange-600' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
-              🏗 Por ruta
-            </button>
-            <button onClick={() => exportarExcelRutas(tipo)} className={`flex-1 text-xs font-semibold py-1.5 rounded-lg border ${isSal ? 'border-orange-400 text-orange-700 hover:bg-orange-50' : 'border-indigo-400 text-indigo-700 hover:bg-indigo-50'}`}>
-              📥 XLS ruta
-            </button>
-          </div>
-          <div className="flex gap-1.5">
-            <button onClick={() => exportarReporteComedores(tipo)} className={`flex-1 text-xs font-semibold py-1.5 rounded-lg text-white ${isSal ? 'bg-yellow-600 hover:bg-yellow-700' : 'bg-cyan-600 hover:bg-cyan-700'}`}>
+            <button onClick={() => exportarReporteComedoresT(tipo)} className={`flex-1 text-xs font-semibold py-1.5 rounded-lg text-white ${isSal ? 'bg-yellow-600 hover:bg-yellow-700' : 'bg-cyan-600 hover:bg-cyan-700'}`}>
               🍽 Por comedor
             </button>
-            <button onClick={() => exportarExcelComedores(tipo)} className={`flex-1 text-xs font-semibold py-1.5 rounded-lg border ${isSal ? 'border-yellow-500 text-yellow-700 hover:bg-yellow-50' : 'border-cyan-500 text-cyan-700 hover:bg-cyan-50'}`}>
+            <button onClick={() => exportarExcelComedoresT(tipo)} className={`flex-1 text-xs font-semibold py-1.5 rounded-lg border ${isSal ? 'border-yellow-500 text-yellow-700 hover:bg-yellow-50' : 'border-cyan-500 text-cyan-700 hover:bg-cyan-50'}`}>
               📥 XLS comedor
             </button>
           </div>
