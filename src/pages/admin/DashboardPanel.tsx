@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import * as XLSX from 'xlsx-js-style'
 import Modal from '../../components/Modal'
-import { ALLP, AGK, AGR, RUTAS, getRid } from '../../utils/constants'
+import { ALLP, AGK, AGR, RUTAS } from '../../utils/constants'
 import {
   getAllUsuarios,
   getDia,
