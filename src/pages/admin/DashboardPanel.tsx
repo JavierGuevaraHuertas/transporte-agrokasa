@@ -228,7 +228,7 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
           `<tr>
           ${fi === 0 ? `<td rowspan="${filas.length + 1}" style="${tdLFn('font-weight:600;vertical-align:middle;background:#f9fafb;border-bottom:2px solid #6ee7b7;')}">${f.hor}</td>` : ''}
           <td style="${tdLFn()}">${f.sup}</td>
-          <td style="${tdLFn()}">${f.area}</td>
+          <td style="${tdLFn(f.area === 'Cosecha Palto' ? 'background:#fef08a;font-weight:700;' : '')}">${f.area}</td>
           ${ALLP.map(({ ag, p }, i) => {
             const v = f.data[p] || 0
             const bl = i > 0 && ALLP[i - 1].ag !== ag ? 'border-left:2px solid #d1fae5;' : ''
@@ -361,6 +361,11 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
     ALLP.forEach(({ p }) => { sc(r, c, p, thStyle({ alignment: { horizontal: 'center', vertical: 'bottom', textRotation: 90, wrapText: true } })); c++ })
     r++
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const scf = (row: number, col: number, formula: string, s: any) => { ws[XLSX.utils.encode_cell({r:row,c:col})] = {f: formula, t:'n', s} }
+    const encC = (col: number) => XLSX.utils.encode_col(col)
+    const firstDataRow = r
+
     Object.entries(grupos).forEach(([_hor, filas]) => {
       const startR = r
       filas.forEach((f, fi) => {
@@ -371,18 +376,40 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
         }
         c = 1
         sc(r, c++, f.sup, tdLStyle())
-        sc(r, c++, f.area, tdLStyle())
+        sc(r, c++, f.area, f.area === 'Cosecha Palto' ? tdLStyle({ fill: { fgColor: { rgb: 'fef08a' } }, font: { bold: true, sz: 9, color: { rgb: '713f12' } } }) : tdLStyle())
+        const dataStartCol = c
         ALLP.forEach(({ p }) => { const v = f.data[p] || 0; sc(r, c++, v || '', v ? tdStyle({ font: { bold: true, sz: 9 } }) : tdStyle({ font: { color: { rgb: 'd1d5db' }, sz: 9 } })) })
-        sc(r, c, f.total || '', tdStyle({ font: { bold: true, color: { rgb: '059669' }, sz: 9 }, fill: { fgColor: { rgb: GREEN_PALE } } }))
+        // TOTAL = SUM of all paradero cols in this row
+        scf(r, c, `SUM(${encC(dataStartCol)}${r+1}:${encC(c-1)}${r+1})`, tdStyle({ font: { bold: true, color: { rgb: '059669' }, sz: 9 }, fill: { fgColor: { rgb: GREEN_PALE } } }))
         r++
       })
+      // Sub Total row per horario
+      const endR = r - 1
+      const subStyle = (extra?: any): any => ({ font: { bold: true, sz: 9, color: { rgb: '14532d' } }, fill: { fgColor: { rgb: GREEN_MID } }, border: { top: { style: 'thin', color: { rgb: '6ee7b7' } }, bottom: { style: 'thin', color: { rgb: '6ee7b7' } }, left: { style: 'thin', color: { rgb: '6ee7b7' } }, right: { style: 'thin', color: { rgb: '6ee7b7' } } }, alignment: { horizontal: 'center', vertical: 'center' }, ...extra })
+      c = 0
+      sc(r, c++, 'Sub Total', subStyle({ alignment: { horizontal: 'left' } }))
+      addMerge(r, 0, r, 2); c = 3
+      const subDataStart = 3
+      ALLP.forEach(() => {
+        scf(r, c, `SUM(${encC(c)}${startR+1}:${encC(c)}${endR+1})`, subStyle())
+        c++
+      })
+      // Sub Total TOTAL col
+      scf(r, c, `SUM(${encC(c)}${startR+1}:${encC(c)}${endR+1})`, subStyle({ fill: { fgColor: { rgb: '6ee7b7' } } }))
+      r++
     })
 
+    const lastDataRow = r - 1
     c = 0
     sc(r, c, 'TOTAL', tdLStyle({ font: { bold: true, sz: 9, color: { rgb: '14532d' } }, fill: { fgColor: { rgb: GREEN_MID } } }))
     addMerge(r, 0, r, 2); c = 3
-    ALLP.forEach(({ p }) => { const v = totPar[p] || 0; sc(r, c++, v || '', tdStyle({ font: { bold: true, color: { rgb: '14532d' }, sz: 9 }, fill: { fgColor: { rgb: GREEN_MID } } })) })
-    sc(r, c, grandTotal, tdStyle({ font: { bold: true, color: { rgb: '14532d' }, sz: 9 }, fill: { fgColor: { rgb: '86efac' } } }))
+    // SUM per paradero column over all data rows
+    ALLP.forEach(() => {
+      scf(r, c, `SUM(${encC(c)}${firstDataRow+1}:${encC(c)}${lastDataRow+1})`, tdStyle({ font: { bold: true, color: { rgb: '14532d' }, sz: 9 }, fill: { fgColor: { rgb: GREEN_MID } } }))
+      c++
+    })
+    // Grand total = SUM of TOTAL column
+    scf(r, c, `SUM(${encC(c)}${firstDataRow+1}:${encC(c)}${lastDataRow+1})`, tdStyle({ font: { bold: true, color: { rgb: '14532d' }, sz: 9 }, fill: { fgColor: { rgb: '86efac' } } }))
 
     ws['!cols'] = [{ wch: 14 }, { wch: 20 }, { wch: 22 }, { wch: 6 }, ...Array(ALLP.length).fill(null).map(() => ({ wch: 5 }))]
     ws['!merges'] = merges
@@ -393,7 +420,7 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
   }
 
   // Orden canónico de horarios para sorting
-  const ORDEN_SALIDA = ['Salida 13:00','Salida 14:00','Salida 15:30','Salida 16:00','Salida 17:00','Salida 17:30','Salida 23:00','Salida 2:00']
+  const ORDEN_SALIDA = ['Salida 13:00','Salida 14:00','Salida 15:30','Salida 16:30','Salida 17:00','Salida 17:30','Salida 23:00','Salida 2:00']
   const ORDEN_RECOJO = ['De 05:00 a 14:00','De 06:30 a 15:30','De 07:30 a 16:30','De 17:00 a 02:00']
 
   const sortHorarios = (hors: string[], tipo: 'SALIDA' | 'RECOJO') => {
@@ -430,8 +457,8 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
     ALLP.forEach(({ p }) => { parTotals[p] = hors.reduce((a, hor) => a + (horParMap[hor]?.[p] || 0), 0) })
     const grandTotal = Object.values(parTotals).reduce((a, b) => a + b, 0)
 
-    const parUsados = ALLP.filter(({ p }) => parTotals[p] > 0)
-    const agUsados = AGK.filter((ag) => AGR[ag].some((p) => parUsados.some((x) => x.p === p)))
+    const parUsados = ALLP  // show ALL paraderos regardless of data
+    const agUsados = AGK   // show ALL agrupadores
 
     return { hors, horParMap, horTotals, parTotals, parUsados, agUsados, grandTotal }
   }
@@ -453,7 +480,7 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
     const tdGrand = `font-size:9px;font-weight:900;text-align:center;border:1px solid ${DARK_BLUE};padding:2px 4px;background:${DARK_BLUE};color:${WHITE};`
 
     const agHeaderCells = agUsados.map((ag) => {
-      const cols = AGR[ag].filter((p) => parUsados.some((x) => x.p === p)).length
+      const cols = AGR[ag].length
       return `<th colspan="${cols}" style="${thAg}">${ag}</th>`
     }).join('')
 
@@ -565,7 +592,7 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
     let c = 0
     sc(r, c, 'HORARIO', thS()); addMerge(r, c, r + 1, c); c++
     agUsados.forEach((ag) => {
-      const cols = AGR[ag].filter((p) => parUsados.some((x) => x.p === p)).length
+      const cols = AGR[ag].length
       sc(r, c, ag, thAgS()); addMerge(r, c, r, c + cols - 1); c += cols
     })
     sc(r, c, 'TOTAL', thS({ fill: { fgColor: { rgb: '0a1f5c' } } })); addMerge(r, c, r + 1, c); r++
@@ -576,6 +603,11 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
       sc(r, c++, p, thS({ alignment: { horizontal: 'center', vertical: 'bottom', textRotation: 90, wrapText: true } }))
     }); r++
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const scf = (row: number, col: number, formula: string, s: any) => { ws[XLSX.utils.encode_cell({r:row,c:col})] = {f: formula, t:'n', s} }
+    const encC = (col: number) => XLSX.utils.encode_col(col)
+
+    const firstDataRow = r
     // Data rows
     hors.forEach((hor) => {
       const isMax = horTotals[hor] === maxHorTotal && maxHorTotal > 0
@@ -585,6 +617,7 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
         : { bold: true, sz: 9, color: { rgb: DARK_BLUE } }
       c = 0
       sc(r, c++, hor, { font: horFont, fill: rowFill, border: brd, alignment: { horizontal: 'center', vertical: 'center' } })
+      const dataStartCol = c
       parUsados.forEach(({ p }) => {
         const v = horParMap[hor]?.[p] || 0
         const cellFill = isMax ? { fgColor: { rgb: YELLOW_HL } } : { fgColor: { rgb: WHITE } }
@@ -595,18 +628,22 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
       })
       const totFill = isMax ? { fgColor: { rgb: YELLOW_HL } } : { fgColor: { rgb: LIGHT_BLUE } }
       const totFont = isMax ? { bold: true, sz: 9, color: { rgb: '6b4c00' } } : { bold: true, sz: 9, color: { rgb: DARK_BLUE } }
-      sc(r, c, horTotals[hor] || '', { font: totFont, fill: totFill, border: brd, alignment: { horizontal: 'center', vertical: 'center' } })
+      // TOTAL col = SUM of all paradero cols in this row
+      scf(r, c, `SUM(${encC(dataStartCol)}${r+1}:${encC(c-1)}${r+1})`, { font: totFont, fill: totFill, border: brd, alignment: { horizontal: 'center', vertical: 'center' } })
       r++
     })
+    const lastDataRow = r - 1
 
-    // Total row
+    // Total row with SUM formulas per column
     c = 0
     sc(r, c++, 'TOTAL', grandS())
-    parUsados.forEach(({ p }) => {
-      const v = parTotals[p] || 0
-      sc(r, c++, v || '', grandS())
+    parUsados.forEach(() => {
+      scf(r, c, `SUM(${encC(c)}${firstDataRow+1}:${encC(c)}${lastDataRow+1})`, grandS())
+      c++
     })
-    sc(r, c, grandTotal, grandS({ font: { bold: true, sz: 10, color: { rgb: WHITE } } }))
+    // Grand total = SUM of all TOTAL col values
+    const totCol = c
+    scf(r, totCol, `SUM(${encC(totCol)}${firstDataRow+1}:${encC(totCol)}${lastDataRow+1})`, grandS({ font: { bold: true, sz: 10, color: { rgb: WHITE } } }))
 
     ws['!cols'] = [{ wch: 16 }, ...parUsados.map(() => ({ wch: 5 })), { wch: 7 }]
     ws['!rows'] = [undefined, undefined, undefined, { hpt: 20 }, { hpt: 80 }, ...hors.map(() => ({ hpt: 16 }))]
@@ -681,12 +718,10 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
           rowTotal += horSub
         })
 
-        if (rowTotal > 0) {
-          // Use rutaDisplay as the grouping key if set (separate group from main ruta)
-          const displayRuta = fila.rutaDisplay || ruta
-          filasMap.push({ ruta: displayRuta, lote: fila.lbl ? '' : String(fila.l ?? ''), com: fila.lbl ? '' : String(fila.c ?? ''), lbl: fila.lbl ?? '', rutaDisplay: fila.rutaDisplay, vals, horSubTotals, grandTotal: rowTotal })
-          grandTotal += rowTotal
-        }
+        // Always include all rows (even empty ones) to show full structure
+        const displayRuta = fila.rutaDisplay || ruta
+        filasMap.push({ ruta: displayRuta, lote: fila.lbl ? '' : String(fila.l ?? ''), com: fila.lbl ? '' : String(fila.c ?? ''), lbl: fila.lbl ?? '', rutaDisplay: fila.rutaDisplay, vals, horSubTotals, grandTotal: rowTotal })
+        grandTotal += rowTotal
       })
     })
 
@@ -700,7 +735,7 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
       const areaCols = areasByHor[h].map((a) =>
         `<th style="${thD('width:26px;min-width:26px;max-width:26px;padding:0;')}">
           <div style="height:80px;display:flex;align-items:center;justify-content:center;">
-            <span style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:8px;line-height:1.2;">${a}</span>
+            <span style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:8px;line-height:1.2;${a === 'Cosecha Palto' ? 'background:#fef08a;color:#713f12;font-weight:700;' : ''}">${a}</span>
           </div>
         </th>`
       ).join('')
@@ -713,18 +748,19 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
     filasMap.forEach((f) => { rutaSpan[f.ruta] = (rutaSpan[f.ruta] || 0) + 1 })
     const rutaRendered = new Set<string>()
 
-    const bodyRows = filasMap.map((fila, idx) => {
+    const bodyRows = filasMap.map((fila, _idx) => {
       const isFirstRuta = !rutaRendered.has(fila.ruta)
       if (isFirstRuta) rutaRendered.add(fila.ruta)
-      const even = idx % 2 === 0 ? 'background:#ffffff;' : 'background:#f9fafb;'
+      const even = _idx % 2 === 0 ? 'background:#ffffff;' : 'background:#f9fafb;'
       const borderTop = isFirstRuta ? 'border-top:2px solid #bbf7d0;' : ''
 
       const rutaCell = isFirstRuta
-        ? `<td rowspan="${rutaSpan[fila.ruta]}" style="${td((!fila.rutaDisplay ? 'font-weight:700;color:#2563eb;background:#eff6ff;' : 'font-weight:700;color:#6b7280;background:#f3f4f6;') + 'border-right:2px solid #bfdbfe;' + borderTop)}">${fila.rutaDisplay || fila.ruta}</td>` : ''
+        ? `<td rowspan="${rutaSpan[fila.ruta]}" style="${td((!fila.rutaDisplay ? 'font-weight:700;color:#2563eb;background:#eff6ff;' : 'font-weight:700;color:#6b7280;background:#f3f4f6;') + 'border-right:2px solid #bfdbfe;' + borderTop)}">${fila.rutaDisplay !== undefined ? fila.rutaDisplay : fila.ruta}</td>` : ''
       const loteComCells = fila.lbl
         ? `<td colspan="2" style="${td('color:#6b7280;font-style:italic;text-align:left;' + even + borderTop)}">${fila.lbl}</td>`
         : `<td style="${td(even + borderTop)}">${fila.lote}</td><td style="${td(even + borderTop)}">${fila.com}</td>`
-      const totalCell = `<td style="${td('font-weight:700;color:#059669;background:#f0fdf4;border-left:2px solid #6ee7b7;border-right:2px solid #6ee7b7;' + borderTop)}">${fila.grandTotal}</td>`
+      const totalVal = fila.grandTotal || ''
+      const totalCell = `<td style="${td('font-weight:700;color:#059669;background:#f0fdf4;border-left:2px solid #6ee7b7;border-right:2px solid #6ee7b7;' + borderTop)}">${totalVal}</td>`
 
       const horCells = hors.map((h) => {
         const areaCells = areasByHor[h].map((a) => {
@@ -846,7 +882,7 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
     // Header row 2: area subcolumns + Sub Total per hor
     c = FIXED_COLS
     hors.forEach((h) => {
-      areasByHor[h].forEach((a) => { sc(r, c++, a, thS2()) })
+      areasByHor[h].forEach((a) => { sc(r, c++, a, a === 'Cosecha Palto' ? thS2({ fill: { fgColor: { rgb: 'fef08a' } }, font: { bold: true, sz: 8, color: { rgb: '713f12' } } }) : thS2()) })
       sc(r, c++, 'Sub Total', thS2({fill:{fgColor:{rgb:'0a3d20'}},font:{bold:true,sz:8,color:{rgb:CYAN}}}))
     })
     r++
@@ -883,7 +919,9 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
           })
           horSubTotals[hor] = sub; horSubGT[hor] = (horSubGT[hor]||0) + sub; rowTotal += sub
         })
-        if (rowTotal > 0) { filasMap.push({ruta, lote:fila.lbl?'':String(fila.l??''), com:fila.lbl?'':String(fila.c??''), lbl:fila.lbl??'', rutaDisplay: fila.rutaDisplay, vals, horSubTotals, rowTotal}); grandTotal += rowTotal }
+        const xlDr = fila.rutaDisplay !== undefined ? (fila.rutaDisplay || ruta) : ruta
+        filasMap.push({ruta: xlDr, lote:fila.lbl?'':String(fila.l??''), com:fila.lbl?'':String(fila.c??''), lbl:fila.lbl??'', rutaDisplay: fila.rutaDisplay, vals, horSubTotals, rowTotal})
+        grandTotal += rowTotal
       })
     })
 
@@ -954,7 +992,7 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
     XLSX.writeFile(wb, `comedores_horario_${tipoLabel.toLowerCase()}_${new Date().toISOString().slice(0,10)}.xlsx`)
   }
 
-    const ResumenCard = ({ tipo }: { tipo: 'SALIDA' | 'RECOJO' }) => {
+  const ResumenCard = ({ tipo }: { tipo: 'SALIDA' | 'RECOJO' }) => {
     const isSal = tipo === 'SALIDA'
     const mine = all.filter((x) => x.tipo === tipo)
     const { grupos } = buildReporteData(tipo)
