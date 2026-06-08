@@ -325,7 +325,7 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
   const exportarExcel = (filtroTipo: 'SALIDA' | 'RECOJO') => {
     const fecha = new Date().toLocaleDateString('es-PE', { weekday: 'short', day: '2-digit', month: '2-digit', year: '2-digit' })
     const tipoLabel = filtroTipo === 'SALIDA' ? 'SALIDA' : 'INGRESO'
-    const { grupos, totPar, grandTotal } = buildReporteData(filtroTipo)
+    const { grupos } = buildReporteData(filtroTipo)
 
     const wb = XLSX.utils.book_new()
     const GREEN_DARK = '1a7a3c', GREEN_LIGHT = 'd4edda', GREEN_MID = 'bbf7d0', GREEN_PALE = 'f0fdf4', WHITE = 'ffffff'
@@ -389,7 +389,6 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
       c = 0
       sc(r, c++, 'Sub Total', subStyle({ alignment: { horizontal: 'left' } }))
       addMerge(r, 0, r, 2); c = 3
-      const subDataStart = 3
       ALLP.forEach(() => {
         scf(r, c, `SUM(${encC(c)}${startR+1}:${encC(c)}${endR+1})`, subStyle())
         c++
@@ -556,7 +555,7 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
     const fechaBase = filtroTipo === 'SALIDA' ? dateSalida : dateRecojo
     const fechaDisplay = new Date(fechaBase + 'T12:00:00').toLocaleDateString('es-PE', { weekday: 'short', day: '2-digit', month: '2-digit', year: '2-digit' })
     const tipoLabel = filtroTipo === 'SALIDA' ? 'SALIDA' : 'INGRESO'
-    const { hors, horParMap, horTotals, parUsados, agUsados, parTotals, grandTotal } = buildParaderosData(filtroTipo)
+    const { hors, horParMap, horTotals, parUsados, agUsados } = buildParaderosData(filtroTipo)
 
     const DARK_BLUE = '0d2b6e', MID_BLUE = '1a3a8f', LIGHT_BLUE = 'dce3f5'
     const YELLOW_HL = 'fff3b0', WHITE = 'ffffff', GRAY = 'c0c8d8'
