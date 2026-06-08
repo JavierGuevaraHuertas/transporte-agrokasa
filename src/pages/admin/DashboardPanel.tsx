@@ -856,6 +856,9 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
     const ws: any = {}; const merges: any[] = []
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sc = (r: number, c: number, v: string | number, s: any) => { ws[XLSX.utils.encode_cell({r,c})] = {v, t:typeof v==='number'?'n':'s', s} }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const scf = (row: number, col: number, formula: string, sty: any) => { ws[XLSX.utils.encode_cell({r:row,c:col})] = {f: formula, t:'n', s: sty} }
+    const encC = (col: number) => XLSX.utils.encode_col(col)
     const addMerge = (r1: number, c1: number, r2: number, c2: number) => merges.push({s:{r:r1,c:c1},e:{r:r2,c:c2}})
 
     let r = 0
@@ -930,6 +933,7 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
     filasMap.forEach((f) => { const k = rutaGroupKey(f); rutaSpan[k] = (rutaSpan[k]||0)+1 })
     const rutaStartRow: Record<string, number> = {}
 
+    const firstDataRow = r
     filasMap.forEach((fila, fi) => {
       c = 0
       const gk = rutaGroupKey(fila)
@@ -945,27 +949,51 @@ export default function DashboardPanel({ refresh, onDiaChange, showToast }: Prop
       const bg = fi%2===0 ? WHITE : 'f9fafb'
       if (fila.lbl) { sc(r,c++,fila.lbl,tdS({font:{italic:true,color:{rgb:'6b7280'},sz:9},fill:{fgColor:{rgb:bg}}})); addMerge(r,1,r,2); c++ }
       else { sc(r,c++,fila.lote,tdS({fill:{fgColor:{rgb:bg}}})); sc(r,c++,fila.com,tdS({fill:{fgColor:{rgb:bg}}})) }
-      sc(r,c++,fila.rowTotal||'',tdS({font:{bold:true,color:{rgb:'059669'},sz:9},fill:{fgColor:{rgb:GREEN_PALE}}}))
+      // TOTAL col placeholder - filled after hors loop
+      const totalColIdx = c; c++
+      const subColIndices: number[] = []
       hors.forEach((h, hi) => {
         const hbg = hi%2===0 ? WHITE : 'f0f9ff'
+        const areaStart = c
         areasByHor[h].forEach((a) => {
           const v = fila.vals[h]?.[a]||0
-          sc(r,c++,v||'',v?tdS({font:{bold:true,sz:9},fill:{fgColor:{rgb:hbg}}}):tdS({font:{color:{rgb:'d1d5db'},sz:9},fill:{fgColor:{rgb:hbg}}}))
+          sc(r,c,v||'',v?tdS({font:{bold:true,sz:9},fill:{fgColor:{rgb:hbg}}}):tdS({font:{color:{rgb:'d1d5db'},sz:9},fill:{fgColor:{rgb:hbg}}}))
+          c++
         })
-        const sub = fila.horSubTotals[h]||0
-        sc(r,c++,sub||'',sub?subS():tdS({font:{color:{rgb:'9ca3af'},sz:9},fill:{fgColor:{rgb:GREEN_SUB}}}))
+        subColIndices.push(c)
+        const areaEnd = c - 1
+        if (areaEnd >= areaStart) {
+          scf(r, c, `SUM(${encC(areaStart)}${r+1}:${encC(areaEnd)}${r+1})`, subS())
+        } else {
+          sc(r, c, '', subS())
+        }
+        c++
       })
+      // Fill TOTAL formula
+      const subRefs = subColIndices.map(ci => `${encC(ci)}${r+1}`).join(',')
+      scf(r, totalColIdx, subRefs ? `SUM(${subRefs})` : '0', tdS({font:{bold:true,color:{rgb:'059669'},sz:9},fill:{fgColor:{rgb:GREEN_PALE}}}))
       r++
     })
+
+    const lastDataRow = r - 1
 
     // Total row
     c = 0
     sc(r,c++,'TOTAL',subS({fill:{fgColor:{rgb:GREEN_MID}}})); addMerge(r,0,r,2); c+=2
-    sc(r,c++,grandTotal,subS({fill:{fgColor:{rgb:GREEN_MID}},font:{bold:true,sz:10,color:{rgb:'14532d'}}}))
+    // Grand total col formula
+    const grandSubRefs2: string[] = []
+    let tc3 = FIXED_COLS
+    hors.forEach((h) => { tc3 += areasByHor[h].length; grandSubRefs2.push(`${encC(tc3)}${firstDataRow+1}:${encC(tc3)}${lastDataRow+1}`); tc3++ })
+    scf(r,c++,grandSubRefs2.map(ref=>`SUM(${ref})`).join('+'),subS({fill:{fgColor:{rgb:GREEN_MID}},font:{bold:true,sz:10,color:{rgb:'14532d'}}}))
+    let tc4 = FIXED_COLS
     hors.forEach((h, hi) => {
       const hbg = hi%2===0 ? GREEN_MID : 'a7f3d0'
-      areasByHor[h].forEach((a) => { const v=horAreaGT[h][a]||0; sc(r,c++,v||'',subS({fill:{fgColor:{rgb:hbg}}})) })
-      sc(r,c++,horSubGT[h]||'',subS({fill:{fgColor:{rgb:'6ee7b7'}},font:{bold:true,sz:9,color:{rgb:'14532d'}}}))
+      areasByHor[h].forEach(() => {
+        scf(r, tc4, `SUM(${encC(tc4)}${firstDataRow+1}:${encC(tc4)}${lastDataRow+1})`, subS({fill:{fgColor:{rgb:hbg}}}))
+        tc4++
+      })
+      scf(r, tc4, `SUM(${encC(tc4)}${firstDataRow+1}:${encC(tc4)}${lastDataRow+1})`, subS({fill:{fgColor:{rgb:'6ee7b7'}},font:{bold:true,sz:9,color:{rgb:'14532d'}}}))
+      tc4++
     })
 
     const totalCols = FIXED_COLS + hors.reduce((a,h) => a+areasByHor[h].length+1, 0)
