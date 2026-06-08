@@ -366,7 +366,6 @@ export default function DashboardPanel({ refresh, onDiaChange: _onDiaChange, sho
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const scf = (row: number, col: number, formula: string, s: any) => { ws[XLSX.utils.encode_cell({r:row,c:col})] = {f: formula, t:'n', s} }
     const encC = (col: number) => XLSX.utils.encode_col(col)
-    const firstDataRow = r
 
     const subTotalRows: number[] = [] // track row numbers of Sub Total rows
 
