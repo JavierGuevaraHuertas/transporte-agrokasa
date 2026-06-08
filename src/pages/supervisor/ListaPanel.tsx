@@ -9,7 +9,6 @@ import {
 } from '../../lib/api'
 import { ALLP, AGR, AGK } from '../../utils/constants'
 import type { Programacion } from '../../lib/database.types'
-
 interface Props {
   tipo: TipoProgram
   refresh: number
@@ -17,71 +16,42 @@ interface Props {
   onNew: () => void
   onEdit: (key: string, tipo: TipoProgram, hor: string, area: string, fecha: string) => void
 }
-
-/** Misma lógica que FormPanel: RECOJO en sábado → consultar lunes */
+/**
+ * SALIDA consulta hoy.
+ * RECOJO/INGRESO consulta mañana.
+ * Si hoy es sábado, RECOJO consulta lunes.
+ */
 function calcFechaConsulta(tipo: TipoProgram): string {
-  const now = new Date()
-  const day = now.getDay() // 0=dom, 6=sab
-  if (tipo === 'RECOJO' && day === 6) {
-    const lunes = new Date(now)
-    lunes.setDate(now.getDate() + 2)
-    return lunes.toISOString().slice(0, 10)
+  const fecha = new Date()
+  const day = fecha.getDay()
+  if (tipo === 'RECOJO') {
+    if (day === 6) {
+      fecha.setDate(fecha.getDate() + 2)
+    } else {
+      fecha.setDate(fecha.getDate() + 1)
+    }
   }
-  return now.toISOString().slice(0, 10)
+  return fecha.toISOString().slice(0, 10)
 }
-
 export default function ListaPanel({ tipo, refresh, onBack, onNew, onEdit }: Props) {
   const { usuario } = useAuth()
   const today = new Date().toISOString().slice(0, 10)
   const fechaConsulta = calcFechaConsulta(tipo)
   const esAjuste = fechaConsulta !== today
-
   const [bloq, setBloq] = useState(false)
   const [items, setItems] = useState<Programacion[]>([])
   const [loading, setLoading] = useState(true)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [confirmItem, setConfirmItem] = useState<Programacion | null>(null)
-
   useEffect(() => {
     let active = true
-
     async function cargar() {
       if (!usuario) return
-
       try {
         setLoading(true)
-
-        // Para RECOJO: buscamos en un rango de fechas y filtramos
-        // por created_at de hoy, así muestra solo las programadas hoy
-        // sin importar para qué fecha de ingreso fueron creadas
-        let allProgs: Programacion[]
-        if (tipo === 'RECOJO') {
-          const todayDate = new Date().toISOString().slice(0, 10)
-          const dates: string[] = []
-          const base = new Date(todayDate + 'T12:00:00')
-          for (let i = 0; i <= 7; i++) {
-            const d = new Date(base)
-            d.setDate(base.getDate() + i)
-            dates.push(d.toISOString().slice(0, 10))
-          }
-          const results = await Promise.all(
-            dates.map((f) => getProgramacionesByUser(usuario.id, f))
-          )
-          // Solo las creadas hoy (ajustando a hora local Perú UTC-5)
-          allProgs = results.flat().filter((p) => {
-            if (!p.created_at) return false
-            const localDate = new Date(p.created_at)
-              .toLocaleDateString('en-CA', { timeZone: 'America/Lima' })
-            return localDate === todayDate
-          })
-        } else {
-          allProgs = await getProgramacionesByUser(usuario.id, fechaConsulta)
-        }
-
+        const allProgs = await getProgramacionesByUser(usuario.id, fechaConsulta)
         const dia = await getDia(fechaConsulta)
-
         if (!active) return
-
         const estadoTipo = tipo === 'SALIDA' ? dia?.estado_salida : dia?.estado_recojo
         setBloq(estadoTipo === 'cerrado' || dia?.estado === 'cerrado')
         setItems(allProgs.filter((x) => x.tipo === tipo))
@@ -95,16 +65,11 @@ export default function ListaPanel({ tipo, refresh, onBack, onNew, onEdit }: Pro
         setLoading(false)
       }
     }
-
     void cargar()
-
     return () => { active = false }
   }, [usuario, fechaConsulta, tipo, refresh])
-
   if (!usuario) return null
-
   const confirmarEliminar = (m: Programacion) => setConfirmItem(m)
-
   const eliminar = async () => {
     if (!confirmItem) return
     const m = confirmItem
@@ -119,35 +84,28 @@ export default function ListaPanel({ tipo, refresh, onBack, onNew, onEdit }: Pro
       setDeletingId(null)
     }
   }
-
   const verReporte = async (m: Programacion) => {
     try {
       const detalle = await getProgramacionDetalle(m.id)
       const detalleConDatos = detalle.filter((row) => (row.cantidad ?? 0) > 0)
-
       const fecha = new Date().toLocaleDateString('es-PE', {
         weekday: 'short', day: '2-digit', month: '2-digit', year: '2-digit',
       })
-
       const color = tipo === 'SALIDA' ? '#d97706' : '#2563eb'
       const colorLight = tipo === 'SALIDA' ? '#fef3c7' : '#dbeafe'
-
       const paraderosUsados = ALLP.map(({ p }) => p).filter((p) =>
         detalleConDatos.some((row) => row.paradero === p)
       )
       const agrupUsados = AGK.filter((ag) =>
         AGR[ag].some((p) => paraderosUsados.includes(p))
       )
-
       type FilaResumen = { orden: number; loteComedor: string; paraderos: Record<string, number>; total: number }
       const filasMap = new Map<string, FilaResumen>()
-
       detalleConDatos.forEach((row, index) => {
         const comedor = Number(row.comedor ?? 0)
         const loteComedor = row.fila_label
           ? row.fila_label
           : comedor > 0 ? `L${row.lote ?? ''} - C${comedor}` : `L${row.lote ?? ''}`
-
         if (!filasMap.has(loteComedor)) {
           filasMap.set(loteComedor, { orden: index, loteComedor, paraderos: {}, total: 0 })
         }
@@ -156,20 +114,16 @@ export default function ListaPanel({ tipo, refresh, onBack, onNew, onEdit }: Pro
         fila.paraderos[row.paradero] = (fila.paraderos[row.paradero] || 0) + (row.cantidad ?? 0)
         fila.total += row.cantidad ?? 0
       })
-
       const filas = Array.from(filasMap.values()).sort((a, b) => a.orden - b.orden)
       const grandTotal = filas.reduce((sum, fila) => sum + fila.total, 0)
-
       const th = (extra = '') =>
         `background:#1a7a3c;color:white;padding:8px 10px;font-size:12px;text-align:center;border:1px solid #155e30;font-weight:800;${extra}`
       const td = (extra = '') =>
         `padding:7px 10px;font-size:12px;border:1px solid #e5e7eb;text-align:center;font-weight:700;${extra}`
-
       const agrupHeaderCells = agrupUsados.map((ag) => {
         const cols = AGR[ag].filter((p) => paraderosUsados.includes(p)).length
         return `<th colspan="${cols}" style="${th('border-bottom:1px solid #155e30;letter-spacing:0.5px;font-size:11px;background:#155e30;vertical-align:bottom;padding-bottom:6px;')}">${ag}</th>`
       }).join('')
-
       const dataRows = filas.map((fila, idx) => {
         const bg = idx % 2 === 0 ? 'background:#ffffff;' : 'background:#f9fafb;'
         const parCells = paraderosUsados.map((p) => {
@@ -182,7 +136,6 @@ export default function ListaPanel({ tipo, refresh, onBack, onNew, onEdit }: Pro
           <td style="${td(bg + 'font-weight:900;color:#059669;border-left:2px solid #d1fae5;')}">${fila.total}</td>
         </tr>`
       }).join('')
-
       const totalRow = `<tr>
         <td style="${td('font-weight:900;color:#14532d;background:#bbf7d0;text-align:center;')}">TOTAL</td>
         ${paraderosUsados.map((p) => {
@@ -191,11 +144,12 @@ export default function ListaPanel({ tipo, refresh, onBack, onNew, onEdit }: Pro
         }).join('')}
         <td style="${td('font-weight:900;color:#14532d;background:#bbf7d0;border-left:2px solid #6ee7b7;')}">${grandTotal}</td>
       </tr>`
-
       const fechaProgLabel = new Date(m.fecha + 'T12:00:00').toLocaleDateString('es-PE', {
-        weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
+        weekday: 'long',
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
       })
-
       const html = `<html><head><meta charset="utf-8">
       <style>
         body{font-family:Arial,sans-serif;margin:0;background:#f3f4f6;color:#111827;padding:24px}
@@ -208,7 +162,10 @@ export default function ListaPanel({ tipo, refresh, onBack, onNew, onEdit }: Pro
       </head><body>
         <div class="image-card">
           <div class="header">
-            <div><h2 style="margin:0 0 6px;font-size:18px;font-weight:800">Programación de Transporte — ${tipo === 'SALIDA' ? 'SALIDA' : 'INGRESO'}</h2><p style="margin:0;font-size:13px;font-weight:600;color:#374151;text-transform:capitalize">${fechaProgLabel}</p></div>
+            <div>
+              <h2 style="margin:0 0 6px;font-size:18px;font-weight:800">Programación de Transporte — ${tipo === 'SALIDA' ? 'SALIDA' : 'INGRESO'}</h2>
+              <p style="margin:0;font-size:13px;font-weight:600;color:#374151;text-transform:capitalize">${fechaProgLabel}</p>
+            </div>
             <div class="meta">Fecha: ${fecha}<br>Supervisor: ${usuario.nombre}</div>
           </div>
           <div style="margin:10px 0 14px;padding:9px 14px;background:${colorLight};border-left:4px solid ${color};border-radius:8px;display:inline-block">
@@ -236,72 +193,85 @@ export default function ListaPanel({ tipo, refresh, onBack, onNew, onEdit }: Pro
           `}
         </div>
       </body></html>`
-
       const win = window.open('', '_blank', 'width=1200,height=800')
-      if (win) { win.document.write(html); win.document.close(); win.focus() }
+      if (win) {
+        win.document.write(html)
+        win.document.close()
+        win.focus()
+      }
     } catch (e) {
       console.error('Error generando reporte:', e)
     }
   }
-
   const descargarReporte = async (m: Programacion) => {
     try {
       const detalle = await getProgramacionDetalle(m.id)
       const detalleConDatos = detalle.filter((row) => (row.cantidad ?? 0) > 0)
-
       const fecha = new Date().toLocaleDateString('es-PE', {
-        weekday: 'short', day: '2-digit', month: '2-digit', year: '2-digit',
+        weekday: 'short',
+        day: '2-digit',
+        month: '2-digit',
+        year: '2-digit',
       })
-
       const color = tipo === 'SALIDA' ? '#d97706' : '#2563eb'
       const colorLight = tipo === 'SALIDA' ? '#fef3c7' : '#dbeafe'
-
       const paraderosUsados = ALLP.map(({ p }) => p).filter((p) =>
         detalleConDatos.some((row) => row.paradero === p)
       )
       const agrupUsados = AGK.filter((ag) =>
         AGR[ag].some((p) => paraderosUsados.includes(p))
       )
-
       type FilaResumen = { orden: number; loteComedor: string; paraderos: Record<string, number>; total: number }
       const filasMap = new Map<string, FilaResumen>()
       detalleConDatos.forEach((row, index) => {
         const comedor = Number(row.comedor ?? 0)
-        const loteComedor = row.fila_label ? row.fila_label : comedor > 0 ? `L${row.lote ?? ''} - C${comedor}` : `L${row.lote ?? ''}`
-        if (!filasMap.has(loteComedor)) filasMap.set(loteComedor, { orden: index, loteComedor, paraderos: {}, total: 0 })
-        const fila = filasMap.get(loteComedor)!
+        const loteComedor = row.fila_label
+          ? row.fila_label
+          : comedor > 0 ? `L${row.lote ?? ''} - C${comedor}` : `L${row.lote ?? ''}`
+        if (!filasMap.has(loteComedor)) {
+          filasMap.set(loteComedor, { orden: index, loteComedor, paraderos: {}, total: 0 })
+        }
+        const fila = filasMap.get(loteComedor)
+        if (!fila) return
         fila.paraderos[row.paradero] = (fila.paraderos[row.paradero] || 0) + (row.cantidad ?? 0)
         fila.total += row.cantidad ?? 0
       })
       const filas = Array.from(filasMap.values()).sort((a, b) => a.orden - b.orden)
       const grandTotal = filas.reduce((sum, fila) => sum + fila.total, 0)
-
-      const th = (extra = '') => `background:#1a7a3c;color:white;padding:8px 10px;font-size:12px;text-align:center;border:1px solid #155e30;font-weight:800;${extra}`
-      const td = (extra = '') => `padding:7px 10px;font-size:12px;border:1px solid #e5e7eb;text-align:center;font-weight:700;${extra}`
-
+      const th = (extra = '') =>
+        `background:#1a7a3c;color:white;padding:8px 10px;font-size:12px;text-align:center;border:1px solid #155e30;font-weight:800;${extra}`
+      const td = (extra = '') =>
+        `padding:7px 10px;font-size:12px;border:1px solid #e5e7eb;text-align:center;font-weight:700;${extra}`
       const agrupHeaderCells = agrupUsados.map((ag) => {
         const cols = AGR[ag].filter((p) => paraderosUsados.includes(p)).length
         return `<th colspan="${cols}" style="${th('border-bottom:1px solid #155e30;font-size:11px;background:#155e30;vertical-align:bottom;padding-bottom:6px;')}">${ag}</th>`
       }).join('')
-
       const dataRows = filas.map((fila, idx) => {
         const bg = idx % 2 === 0 ? 'background:#ffffff;' : 'background:#f9fafb;'
         const parCells = paraderosUsados.map((p) => {
           const v = fila.paraderos[p] || 0
           return `<td style="${td(bg + (v ? 'color:#111827;' : 'color:#d1d5db;'))}">${v || ''}</td>`
         }).join('')
-        return `<tr><td style="${td(bg + 'color:#374151;white-space:nowrap;')}">${fila.loteComedor}</td>${parCells}<td style="${td(bg + 'font-weight:900;color:#059669;border-left:2px solid #d1fae5;')}">${fila.total}</td></tr>`
+        return `<tr>
+          <td style="${td(bg + 'color:#374151;white-space:nowrap;')}">${fila.loteComedor}</td>
+          ${parCells}
+          <td style="${td(bg + 'font-weight:900;color:#059669;border-left:2px solid #d1fae5;')}">${fila.total}</td>
+        </tr>`
       }).join('')
-
-      const totalRow = `<tr><td style="${td('font-weight:900;color:#14532d;background:#bbf7d0;')}">TOTAL</td>${paraderosUsados.map((p) => {
-        const v = filas.reduce((sum, fila) => sum + (fila.paraderos[p] || 0), 0)
-        return `<td style="${td('font-weight:900;color:#14532d;background:#bbf7d0;')}">${v || ''}</td>`
-      }).join('')}<td style="${td('font-weight:900;color:#14532d;background:#bbf7d0;')}">${grandTotal}</td></tr>`
-
+      const totalRow = `<tr>
+        <td style="${td('font-weight:900;color:#14532d;background:#bbf7d0;')}">TOTAL</td>
+        ${paraderosUsados.map((p) => {
+          const v = filas.reduce((sum, fila) => sum + (fila.paraderos[p] || 0), 0)
+          return `<td style="${td('font-weight:900;color:#14532d;background:#bbf7d0;')}">${v || ''}</td>`
+        }).join('')}
+        <td style="${td('font-weight:900;color:#14532d;background:#bbf7d0;')}">${grandTotal}</td>
+      </tr>`
       const fechaProgLabel = new Date(m.fecha + 'T12:00:00').toLocaleDateString('es-PE', {
-        weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
+        weekday: 'long',
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
       })
-
       const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
       <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"><\/script>
       <style>
@@ -315,7 +285,7 @@ export default function ListaPanel({ tipo, refresh, onBack, onNew, onEdit }: Pro
               <h2 style="margin:0 0 4px;font-size:18px;font-weight:800">Programación de Transporte — ${tipo === 'SALIDA' ? 'SALIDA' : 'INGRESO'}</h2>
               <p style="margin:0;font-size:13px;font-weight:600;color:#374151;text-transform:capitalize">${fechaProgLabel}</p>
             </div>
-            <div style="text-align:right;font-size:12px;color:#555;line-height:1.45">Fecha: ${fecha}<br>Supervisor: ${usuario!.nombre}</div>
+            <div style="text-align:right;font-size:12px;color:#555;line-height:1.45">Fecha: ${fecha}<br>Supervisor: ${usuario.nombre}</div>
           </div>
           <div style="margin:10px 0 14px;padding:9px 14px;background:${colorLight};border-left:4px solid ${color};border-radius:8px;display:inline-block">
             <span style="font-size:15px;font-weight:900;color:${color}">${m.horario_label}</span>
@@ -358,14 +328,15 @@ export default function ListaPanel({ tipo, refresh, onBack, onNew, onEdit }: Pro
           }
         <\/script>
       </body></html>`
-
       const win = window.open('', '_blank', 'width=1400,height=900')
-      if (win) { win.document.write(html); win.document.close() }
+      if (win) {
+        win.document.write(html)
+        win.document.close()
+      }
     } catch (e) {
       console.error('Error descargando reporte:', e)
     }
   }
-
   return (
     <div>
       <div className="flex items-center gap-2 py-2 mb-2">
@@ -379,7 +350,6 @@ export default function ListaPanel({ tipo, refresh, onBack, onNew, onEdit }: Pro
           Volver al inicio
         </button>
       </div>
-
       <div className="flex items-center justify-between mb-3">
         <div>
           <h2 className="text-sm font-bold text-gray-900">
@@ -387,7 +357,7 @@ export default function ListaPanel({ tipo, refresh, onBack, onNew, onEdit }: Pro
           </h2>
           {esAjuste && (
             <p className="text-xs text-amber-600 mt-0.5">
-              📅 Mostrando programaciones del lunes
+              📅 Mostrando programación de ingreso
             </p>
           )}
         </div>
@@ -399,7 +369,6 @@ export default function ListaPanel({ tipo, refresh, onBack, onNew, onEdit }: Pro
           {bloq ? '🔒 Cerrado' : '+ Nueva'}
         </button>
       </div>
-
       {loading ? (
         <div className="text-center py-10 text-gray-400 text-sm">
           <p>Cargando programaciones...</p>
@@ -434,7 +403,6 @@ export default function ListaPanel({ tipo, refresh, onBack, onNew, onEdit }: Pro
                     <path d="M9 18l6-6-6-6" />
                   </svg>
                 </div>
-
                 {!bloq && (
                   <button
                     onClick={() => confirmarEliminar(m)}
@@ -455,7 +423,6 @@ export default function ListaPanel({ tipo, refresh, onBack, onNew, onEdit }: Pro
                   </button>
                 )}
               </div>
-
               <div className="mt-2 pt-2 border-t border-gray-50 flex gap-2">
                 <button
                   onClick={() => void verReporte(m)}
@@ -474,7 +441,6 @@ export default function ListaPanel({ tipo, refresh, onBack, onNew, onEdit }: Pro
           ))}
         </div>
       )}
-
       {confirmItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
           <div className="bg-white rounded-2xl shadow-xl p-5 w-full max-w-sm">

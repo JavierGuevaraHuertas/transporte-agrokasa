@@ -36,11 +36,17 @@ interface Props {
 export default function DashboardPanel({ refresh, onDiaChange, showToast }: Props) {
   const today = new Date().toISOString().slice(0, 10)
   // dateRecojo defaults to Monday when today is Saturday
-  const defaultDateRecojo = (() => {
-    const d = new Date()
-    if (d.getDay() === 6) { const m = new Date(d); m.setDate(d.getDate() + 2); return m.toISOString().slice(0, 10) }
-    return d.toISOString().slice(0, 10)
-  })()
+const defaultDateRecojo = (() => {
+  const d = new Date()
+
+  if (d.getDay() === 6) {
+    d.setDate(d.getDate() + 2)
+  } else {
+    d.setDate(d.getDate() + 1)
+  }
+
+  return d.toISOString().slice(0, 10)
+})()
   const [dateSalida, setDateSalida] = useState(today)
   const [dateRecojo, setDateRecojo] = useState(defaultDateRecojo)
   const [supervisores, setSupervisores] = useState<Supervisor[]>([])

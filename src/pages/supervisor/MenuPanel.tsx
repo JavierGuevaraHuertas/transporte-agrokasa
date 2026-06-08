@@ -3,72 +3,47 @@ import type { TipoProgram } from '../../types'
 import { useAuth } from '../../hooks/useAuth'
 import { getDia, getProgramacionesByUser } from '../../lib/api'
 import type { Programacion } from '../../lib/database.types'
-
 interface Props {
   refresh: number
   onGoLista: (tipo: TipoProgram) => void
   onNewDirect: (tipo: TipoProgram) => void
 }
-
-/** Para RECOJO en sábado, la fecha de consulta es el lunes siguiente */
 function calcFechaConsulta(tipo: TipoProgram): string {
-  const now = new Date()
-  const day = now.getDay()
-  if (tipo === 'RECOJO' && day === 6) {
-    const lunes = new Date(now)
-    lunes.setDate(now.getDate() + 2)
-    return lunes.toISOString().slice(0, 10)
+  const fecha = new Date()
+  const day = fecha.getDay()
+  if (tipo === 'RECOJO') {
+    if (day === 6) {
+      fecha.setDate(fecha.getDate() + 2)
+    } else {
+      fecha.setDate(fecha.getDate() + 1)
+    }
   }
-  return now.toISOString().slice(0, 10)
+  return fecha.toISOString().slice(0, 10)
 }
-
 export default function MenuPanel({ refresh, onGoLista, onNewDirect }: Props) {
   const { usuario } = useAuth()
   const today = new Date().toISOString().slice(0, 10)
-
-  // Fechas de consulta por tipo (pueden diferir si es sábado)
   const fechaSalida = calcFechaConsulta('SALIDA')
   const fechaRecojo = calcFechaConsulta('RECOJO')
-
   const [bloq, setBloq] = useState(false)
   const [items, setItems] = useState<Programacion[]>([])
   const [loading, setLoading] = useState(true)
-
   useEffect(() => {
     let active = true
-
     async function cargar() {
       if (!usuario) return
-
       try {
         setLoading(true)
-
-        // Si las fechas difieren (sábado), hacer consultas separadas
-        let allProgs: Programacion[]
-
-        if (fechaSalida === fechaRecojo) {
-          // Mismo día: una sola consulta
-          const [dia, progs] = await Promise.all([
-            getDia(fechaSalida),
-            getProgramacionesByUser(usuario.id, fechaSalida),
-          ])
-          if (!active) return
-          setBloq(dia?.estado === 'cerrado')
-          allProgs = progs
-        } else {
-          // Sábado: SALIDA consulta hoy, RECOJO consulta lunes
-          const [diaSalida, progsSalida, progsRecojo] = await Promise.all([
-            getDia(today),
-            getProgramacionesByUser(usuario.id, fechaSalida),
-            getProgramacionesByUser(usuario.id, fechaRecojo),
-          ])
-          if (!active) return
-          setBloq(diaSalida?.estado === 'cerrado')
-          allProgs = [...progsSalida, ...progsRecojo]
-        }
-
+        const [diaSalida, progsSalida, progsRecojo] = await Promise.all([
+          getDia(fechaSalida),
+          getProgramacionesByUser(usuario.id, fechaSalida),
+          getProgramacionesByUser(usuario.id, fechaRecojo),
+        ])
         if (!active) return
-        setItems(allProgs)
+        setBloq(diaSalida?.estado === 'cerrado')
+        const soloSalida = progsSalida.filter((x) => x.tipo === 'SALIDA')
+        const soloRecojo = progsRecojo.filter((x) => x.tipo === 'RECOJO')
+        setItems([...soloSalida, ...soloRecojo])
       } catch (e) {
         console.error('Error cargando menú:', e)
         if (!active) return
@@ -79,12 +54,11 @@ export default function MenuPanel({ refresh, onGoLista, onNewDirect }: Props) {
         setLoading(false)
       }
     }
-
     void cargar()
-
-    return () => { active = false }
-  }, [usuario, today, fechaSalida, fechaRecojo, refresh])
-
+    return () => {
+      active = false
+    }
+  }, [usuario, fechaSalida, fechaRecojo, refresh])
   const stats = useMemo(() => {
     const calc = (tipo: TipoProgram) => {
       const mine = items.filter((x) => x.tipo === tipo)
@@ -93,27 +67,22 @@ export default function MenuPanel({ refresh, onGoLista, onNewDirect }: Props) {
         total: mine.reduce((a, x) => a + (x.total || 0), 0),
       }
     }
-
     return {
       salida: calc('SALIDA'),
       recojo: calc('RECOJO'),
     }
   }, [items])
-
   const dateLabel = new Date().toLocaleDateString('es-PE', {
     weekday: 'long',
     day: '2-digit',
     month: 'long',
     year: 'numeric',
   })
-
   if (!usuario) return null
-
   const TipoCard = ({ tipo }: { tipo: TipoProgram }) => {
     const isSal = tipo === 'SALIDA'
     const { count, total } = isSal ? stats.salida : stats.recojo
     const esAjuste = calcFechaConsulta(tipo) !== today
-
     return (
       <div
         onClick={() => !bloq && onGoLista(tipo)}
@@ -126,7 +95,9 @@ export default function MenuPanel({ refresh, onGoLista, onNewDirect }: Props) {
         } transition-all`}
       >
         <div className="flex items-center gap-2 mb-3">
-          <p className="text-sm font-bold text-gray-900 uppercase tracking-wide">{isSal ? 'SALIDA' : 'INGRESO'}</p>
+          <p className="text-sm font-bold text-gray-900 uppercase tracking-wide">
+            {isSal ? 'SALIDA' : 'INGRESO'}
+          </p>
           <div className={"w-5 h-5 rounded flex items-center justify-center " + (isSal ? 'bg-amber-100' : 'bg-blue-100')}>
             {isSal ? (
               <svg className="w-3 h-3 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.2}>
@@ -139,7 +110,6 @@ export default function MenuPanel({ refresh, onGoLista, onNewDirect }: Props) {
             )}
           </div>
         </div>
-
         <div className="border-t border-gray-100 pt-2">
           <div className="flex justify-between items-center mb-1">
             <span className="text-xs text-gray-400">Programaciones</span>
@@ -151,10 +121,9 @@ export default function MenuPanel({ refresh, onGoLista, onNewDirect }: Props) {
             Personas <span className="font-semibold text-green-600 ml-1">{loading ? '...' : total}</span>
           </p>
           {esAjuste && (
-            <p className="text-xs text-amber-500 mt-1">📅 Para el lunes</p>
+            <p className="text-xs text-amber-500 mt-1">📅 Para mañana</p>
           )}
         </div>
-
         {!bloq && (
           <div className="mt-2">
             {count > 0 ? (
@@ -189,7 +158,6 @@ export default function MenuPanel({ refresh, onGoLista, onNewDirect }: Props) {
       </div>
     )
   }
-
   return (
     <div>
       {bloq && (
@@ -200,41 +168,36 @@ export default function MenuPanel({ refresh, onGoLista, onNewDirect }: Props) {
           </p>
         </div>
       )}
-
       <div className="card mb-3 flex items-center justify-between">
         <p className="text-sm font-bold text-gray-900">Bienvenido(a), {usuario.nombre}</p>
         <p className="text-xs text-gray-400 capitalize">{dateLabel}</p>
       </div>
-
       <div className="grid grid-cols-2 gap-3 mb-4">
         <TipoCard tipo="SALIDA" />
         <TipoCard tipo="RECOJO" />
       </div>
-
       {items.length > 0 && (
-        <>
-          <div className="flex flex-col gap-1.5">
-            {items.slice(0, 4).map((m) => (
-              <div
-                key={m.id}
-                className="card flex items-center gap-2 cursor-pointer hover:border-gray-300"
-                onClick={() => onGoLista(m.tipo as TipoProgram)}
-              >
-                <span className={m.tipo === 'SALIDA' ? 'badge-salida' : 'badge-recojo'}>
-                  {m.tipo === 'SALIDA' ? 'SALIDA' : 'INGRESO'}
-                </span>
-                <div className="flex-1">
-                  <p className="text-xs font-semibold text-gray-900">{m.area}</p>
-                  <p className="text-xs text-gray-400">{m.horario_label}</p>
-                </div>
-                <span className="text-sm font-bold text-green-600">{m.total}</span>
-                <svg className="w-3 h-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                  <path d="M9 18l6-6-6-6" />
-                </svg>
+        <div className="flex flex-col gap-1.5">
+          {items.slice(0, 4).map((m) => (
+            <div
+              key={m.id}
+              className="card flex items-center gap-2 cursor-pointer hover:border-gray-300"
+              onClick={() => onGoLista(m.tipo as TipoProgram)}
+            >
+              <span className={m.tipo === 'SALIDA' ? 'badge-salida' : 'badge-recojo'}>
+                {m.tipo === 'SALIDA' ? 'SALIDA' : 'INGRESO'}
+              </span>
+              <div className="flex-1">
+                <p className="text-xs font-semibold text-gray-900">{m.area}</p>
+                <p className="text-xs text-gray-400">{m.horario_label}</p>
               </div>
-            ))}
-          </div>
-        </>
+              <span className="text-sm font-bold text-green-600">{m.total}</span>
+              <svg className="w-3 h-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path d="M9 18l6-6-6-6" />
+              </svg>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   )
