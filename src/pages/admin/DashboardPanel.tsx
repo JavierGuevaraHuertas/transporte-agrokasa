@@ -36,17 +36,11 @@ interface Props {
 export default function DashboardPanel({ refresh, onDiaChange, showToast }: Props) {
   const today = new Date().toISOString().slice(0, 10)
   // dateRecojo defaults to Monday when today is Saturday
-const defaultDateRecojo = (() => {
-  const d = new Date()
-
-  if (d.getDay() === 6) {
-    d.setDate(d.getDate() + 2)
-  } else {
-    d.setDate(d.getDate() + 1)
-  }
-
-  return d.toISOString().slice(0, 10)
-})()
+  const defaultDateRecojo = (() => {
+    const d = new Date()
+    if (d.getDay() === 6) { const m = new Date(d); m.setDate(d.getDate() + 2); return m.toISOString().slice(0, 10) }
+    return d.toISOString().slice(0, 10)
+  })()
   const [dateSalida, setDateSalida] = useState(today)
   const [dateRecojo, setDateRecojo] = useState(defaultDateRecojo)
   const [supervisores, setSupervisores] = useState<Supervisor[]>([])
@@ -91,15 +85,18 @@ const defaultDateRecojo = (() => {
         setLoading(true)
 
         // Load both dates in parallel (they may differ on Saturdays)
-        const [dia, progsSalida, progsRecojo] = await Promise.all([
+        const [diaSalida, diaRecojo, progsSalida, progsRecojo] = await Promise.all([
           getDia(dateSalida),
+          dateSalida === dateRecojo ? Promise.resolve(null) : getDia(dateRecojo),
           getAllProgramaciones(dateSalida),
           dateSalida === dateRecojo ? Promise.resolve(null) : getAllProgramaciones(dateRecojo),
         ])
+        const dia = diaSalida
+        const diaRec = dateSalida === dateRecojo ? diaSalida : diaRecojo
 
         if (!active) return
         setCerradoSalida(dia?.estado_salida === 'cerrado' || dia?.estado === 'cerrado')
-        setCerradoRecojo(dia?.estado_recojo === 'cerrado' || dia?.estado === 'cerrado')
+        setCerradoRecojo(diaRec?.estado_recojo === 'cerrado' || diaRec?.estado === 'cerrado')
 
         const mappedSalida = await mapProgs((progsSalida || []).filter((p: any) => p.tipo === 'SALIDA'))
         const recojoSource = dateSalida === dateRecojo
@@ -150,7 +147,6 @@ const defaultDateRecojo = (() => {
       await setDiaEstadoTipo(fecha, modalTipo, esCerrado ? 'abierto' : 'cerrado')
       if (modalTipo === 'SALIDA') setCerradoSalida(!cerradoSalida)
       else setCerradoRecojo(!cerradoRecojo)
-      onDiaChange()
       const label = modalTipo === 'SALIDA' ? 'Salida' : 'Ingreso'
       showToast(
         esCerrado ? `${label} reabierta` : `${label} cerrada — supervisores bloqueados`,
@@ -372,6 +368,8 @@ const defaultDateRecojo = (() => {
     const encC = (col: number) => XLSX.utils.encode_col(col)
     const firstDataRow = r
 
+    const subTotalRows: number[] = [] // track row numbers of Sub Total rows
+
     Object.entries(grupos).forEach(([_hor, filas]) => {
       const startR = r
       filas.forEach((f, fi) => {
@@ -385,7 +383,6 @@ const defaultDateRecojo = (() => {
         sc(r, c++, f.area, f.area === 'Cosecha Palto' ? tdLStyle({ fill: { fgColor: { rgb: 'fef08a' } }, font: { bold: true, sz: 9, color: { rgb: '713f12' } } }) : tdLStyle())
         const dataStartCol = c
         ALLP.forEach(({ p }) => { const v = f.data[p] || 0; sc(r, c++, v || '', v ? tdStyle({ font: { bold: true, sz: 9 } }) : tdStyle({ font: { color: { rgb: 'd1d5db' }, sz: 9 } })) })
-        // TOTAL = SUM of all paradero cols in this row
         scf(r, c, `SUM(${encC(dataStartCol)}${r+1}:${encC(c-1)}${r+1})`, tdStyle({ font: { bold: true, color: { rgb: '059669' }, sz: 9 }, fill: { fgColor: { rgb: GREEN_PALE } } }))
         r++
       })
@@ -399,22 +396,21 @@ const defaultDateRecojo = (() => {
         scf(r, c, `SUM(${encC(c)}${startR+1}:${encC(c)}${endR+1})`, subStyle())
         c++
       })
-      // Sub Total TOTAL col
       scf(r, c, `SUM(${encC(c)}${startR+1}:${encC(c)}${endR+1})`, subStyle({ fill: { fgColor: { rgb: '6ee7b7' } } }))
+      subTotalRows.push(r) // record this subtotal row
       r++
     })
 
-    const lastDataRow = r - 1
     c = 0
     sc(r, c, 'TOTAL', tdLStyle({ font: { bold: true, sz: 9, color: { rgb: '14532d' } }, fill: { fgColor: { rgb: GREEN_MID } } }))
     addMerge(r, 0, r, 2); c = 3
-    // SUM per paradero column over all data rows
+    // TOTAL = SUM of only the Sub Total rows (not individual rows - avoids double counting)
+    const subTotalParaderoCol = (col: number) => subTotalRows.map(sr => `${encC(col)}${sr+1}`).join(',')
     ALLP.forEach(() => {
-      scf(r, c, `SUM(${encC(c)}${firstDataRow+1}:${encC(c)}${lastDataRow+1})`, tdStyle({ font: { bold: true, color: { rgb: '14532d' }, sz: 9 }, fill: { fgColor: { rgb: GREEN_MID } } }))
+      scf(r, c, `SUM(${subTotalParaderoCol(c)})`, tdStyle({ font: { bold: true, color: { rgb: '14532d' }, sz: 9 }, fill: { fgColor: { rgb: GREEN_MID } } }))
       c++
     })
-    // Grand total = SUM of TOTAL column
-    scf(r, c, `SUM(${encC(c)}${firstDataRow+1}:${encC(c)}${lastDataRow+1})`, tdStyle({ font: { bold: true, color: { rgb: '14532d' }, sz: 9 }, fill: { fgColor: { rgb: '86efac' } } }))
+    scf(r, c, `SUM(${subTotalParaderoCol(c)})`, tdStyle({ font: { bold: true, color: { rgb: '14532d' }, sz: 9 }, fill: { fgColor: { rgb: '86efac' } } }))
 
     ws['!cols'] = [{ wch: 14 }, { wch: 20 }, { wch: 22 }, { wch: 6 }, ...Array(ALLP.length).fill(null).map(() => ({ wch: 5 }))]
     ws['!merges'] = merges
