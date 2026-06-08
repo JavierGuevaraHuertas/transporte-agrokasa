@@ -33,7 +33,7 @@ interface Props {
   showToast: (msg: string, type: 'ok' | 'warn' | 'err') => void
 }
 
-export default function DashboardPanel({ refresh, onDiaChange, showToast }: Props) {
+export default function DashboardPanel({ refresh, onDiaChange: _onDiaChange, showToast }: Props) {
   const today = new Date().toISOString().slice(0, 10)
   // dateRecojo defaults to Monday when today is Saturday
   const defaultDateRecojo = (() => {
