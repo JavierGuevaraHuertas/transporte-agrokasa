@@ -17,18 +17,19 @@ interface Props {
 }
 
 /** Calcula la fecha de programación según tipo y día de la semana.
- *  Para RECOJO programado en sábado (day=6): se sugiere el lunes siguiente (+2 días)
- *  porque el domingo normalmente no se labora. El supervisor puede cambiar la fecha
- *  manualmente en caso de que esa semana sí se trabaje el domingo u otro día. */
+ *  Para RECOJO:
+ *    - Sábado (day=6) → lunes siguiente (+2 días), porque domingo no se labora
+ *    - Cualquier otro día → día siguiente (+1 día)
+ *  Para SALIDA: siempre hoy. */
 function calcFechaDefault(tipo: string): string {
   const now = new Date()
-  const day = now.getDay() // 0=dom, 6=sab
+  const day = now.getDay() // 0=dom, 1=lun ... 6=sab
 
-  if (tipo === 'RECOJO' && day === 6) {
-    // Sábado → proponer lunes por defecto
-    const lunes = new Date(now)
-    lunes.setDate(now.getDate() + 2)
-    return lunes.toISOString().slice(0, 10)
+  if (tipo === 'RECOJO') {
+    const next = new Date(now)
+    // Sábado → lunes (+2), resto → día siguiente (+1)
+    next.setDate(now.getDate() + (day === 6 ? 2 : 1))
+    return next.toISOString().slice(0, 10)
   }
 
   return now.toISOString().slice(0, 10)
@@ -41,7 +42,7 @@ export default function FormPanel({ formState, onBack, onSaved }: Props) {
   const { tipo, key: editKey, hor: initHor, area: initArea, fecha: initFecha } = formState
   const horList = HOR[tipo]
 
-  // fecha de programación: ajustada automáticamente para RECOJO en sábado
+  // fecha de programación: ajustada automáticamente para RECOJO
   const [fechaProgram, setFechaProgram] = useState<string>(() => initFecha || calcFechaDefault(tipo))
 
   const [areas, setAreas] = useState<string[]>(ALL_AREAS)
@@ -91,7 +92,6 @@ export default function FormPanel({ formState, onBack, onSaved }: Props) {
     getDia(fechaProgram)
       .then((dia) => {
         if (!active) return
-        // Check type-specific estado first, fall back to global estado
         const estadoTipo = tipo === 'SALIDA' ? dia?.estado_salida : dia?.estado_recojo
         setBloq(estadoTipo === 'cerrado' || dia?.estado === 'cerrado')
       })
@@ -115,7 +115,6 @@ export default function FormPanel({ formState, onBack, onSaved }: Props) {
       }
 
       try {
-        // Fetch the programacion to get its real fecha
         const prog = await getProgramacionById(editKey)
         if (!active) return
         if (prog?.fecha) setFechaProgram(prog.fecha)
@@ -224,7 +223,7 @@ export default function FormPanel({ formState, onBack, onSaved }: Props) {
 
       await saveProgramacion(
         usuario.id,
-        fechaProgram,   // ← usa la fecha de programación (puede ser lunes si es sábado)
+        fechaProgram,
         tipo,
         hor,
         horarioSel?.label || hor,
@@ -246,13 +245,11 @@ export default function FormPanel({ formState, onBack, onSaved }: Props) {
 
   if (!usuario) return null
 
-  // Etiqueta para mostrar la fecha de programación al usuario
   const fechaLabel = new Date(fechaProgram + 'T12:00:00').toLocaleDateString('es-PE', {
     weekday: 'long',
     day: '2-digit',
     month: 'long',
   })
-
 
   return (
     <div>
@@ -307,7 +304,7 @@ export default function FormPanel({ formState, onBack, onSaved }: Props) {
           </select>
         </div>
 
-        {/* Fecha de programación — siempre visible para RECOJO */}
+        {/* Fecha de programación — solo visible para RECOJO */}
         {tipo === 'RECOJO' && (
           <div className="col-span-2">
             <label className="block text-xs font-semibold text-gray-500 mb-1">
@@ -321,13 +318,7 @@ export default function FormPanel({ formState, onBack, onSaved }: Props) {
                 disabled={bloq || saving}
                 className="input-base flex-1"
               />
-              <span className="text-xs text-blue-600 font-medium capitalize whitespace-nowrap">
-                {fechaLabel}
-              </span>
             </div>
-            <p className="text-xs text-amber-600 mt-1">
-              📅 Recojo programado para el <span className="font-semibold capitalize">{fechaLabel}</span>. Ajusta si es necesario.
-            </p>
           </div>
         )}
 

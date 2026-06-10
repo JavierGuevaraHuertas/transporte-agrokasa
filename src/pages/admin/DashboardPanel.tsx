@@ -281,7 +281,9 @@ export default function DashboardPanel({ refresh, onDiaChange: _onDiaChange, sho
   }
 
   const exportarReporte = (filtroTipo: 'SALIDA' | 'RECOJO') => {
-    const fecha = new Date().toLocaleDateString('es-PE', { weekday: 'short', day: '2-digit', month: '2-digit', year: '2-digit' })
+    // ── CAMBIO: usar la fecha del estado en lugar de new Date() ──
+    const fechaBase = filtroTipo === 'SALIDA' ? dateSalida : dateRecojo
+    const fecha = new Date(fechaBase + 'T12:00:00').toLocaleDateString('es-PE', { weekday: 'short', day: '2-digit', month: '2-digit', year: '2-digit' })
     const color = filtroTipo === 'SALIDA' ? '#d97706' : '#2563eb'
     const colorLight = filtroTipo === 'SALIDA' ? '#fef3c7' : '#dbeafe'
     const tipoLabel = filtroTipo === 'SALIDA' ? 'SALIDA' : 'INGRESO'
@@ -309,12 +311,11 @@ export default function DashboardPanel({ refresh, onDiaChange: _onDiaChange, sho
       @media print{body{margin:8px} @page{size:landscape;margin:10mm}}
     </style></head><body>
       <div id="reporte">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
           <div>
-            <h2 style="margin:0 0 4px;font-size:13px;font-weight:800">Distribución de personal en los paraderos</h2>
+            <h2 style="margin:0 0 4px;font-size:13px;font-weight:800">Distribución de personal en los paraderos, ${fecha}</h2>
             <span style="font-size:11px;font-weight:700;color:${color};padding:2px 10px;background:${colorLight};border-radius:4px;border:1px solid ${color}">${tipoLabel}</span>
           </div>
-          <span style="font-size:10px;color:#555">Fecha: ${fecha}</span>
         </div>
         ${tabla}
       </div>
@@ -325,7 +326,9 @@ export default function DashboardPanel({ refresh, onDiaChange: _onDiaChange, sho
   }
 
   const exportarExcel = (filtroTipo: 'SALIDA' | 'RECOJO') => {
-    const fecha = new Date().toLocaleDateString('es-PE', { weekday: 'short', day: '2-digit', month: '2-digit', year: '2-digit' })
+    // ── CAMBIO: usar la fecha del estado en lugar de new Date() ──
+    const fechaBase = filtroTipo === 'SALIDA' ? dateSalida : dateRecojo
+    const fecha = new Date(fechaBase + 'T12:00:00').toLocaleDateString('es-PE', { weekday: 'short', day: '2-digit', month: '2-digit', year: '2-digit' })
     const tipoLabel = filtroTipo === 'SALIDA' ? 'SALIDA' : 'INGRESO'
     const { grupos } = buildReporteData(filtroTipo)
 
@@ -347,10 +350,8 @@ export default function DashboardPanel({ refresh, onDiaChange: _onDiaChange, sho
     const addMerge = (r1: number, c1: number, r2: number, c2: number) => merges.push({ s: { r: r1, c: c1 }, e: { r: r2, c: c2 } })
 
     let r = 0
-    sc(r, 0, `Distribución de personal — Por área ${tipoLabel}`, { font: { bold: true, sz: 13 }, alignment: { horizontal: 'left' } })
-    addMerge(r, 0, r, 5); r++
-    sc(r, 0, `Fecha: ${fecha}`, { font: { sz: 9, color: { rgb: '555555' } }, alignment: { horizontal: 'left' } })
-    addMerge(r, 0, r, 5); r++; r++
+    sc(r, 0, `Distribución de personal — Por área ${tipoLabel}, ${fecha}`, { font: { bold: true, sz: 13 }, alignment: { horizontal: 'left' } })
+    addMerge(r, 0, r, 15); r++; r++
 
     let c = 0
     sc(r, c, 'HORARIO', thStyle({ alignment: { horizontal: 'center', vertical: 'center' } })); addMerge(r, c, r + 1, c); c++
@@ -416,7 +417,7 @@ export default function DashboardPanel({ refresh, onDiaChange: _onDiaChange, sho
     ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r, c: 3 + ALLP.length } })
 
     XLSX.utils.book_append_sheet(wb, ws, 'Por Área')
-    XLSX.writeFile(wb, `area_${tipoLabel.toLowerCase()}_${new Date().toISOString().slice(0, 10)}.xlsx`)
+    XLSX.writeFile(wb, `area_${tipoLabel.toLowerCase()}_${fechaBase}.xlsx`)
   }
 
   // Orden canónico de horarios para sorting
@@ -521,12 +522,11 @@ export default function DashboardPanel({ refresh, onDiaChange: _onDiaChange, sho
       table{border-collapse:collapse;width:100%}
       @media print{body{background:white;margin:6px}.card{box-shadow:none;padding:8px}@page{size:landscape;margin:8mm}}
     </style></head><body><div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
         <div>
-          <div style="font-size:13px;font-weight:900;color:${DARK_BLUE};letter-spacing:0.5px;text-transform:uppercase;">Distribución de Personal en los Paraderos</div>
+          <div style="font-size:13px;font-weight:900;color:${DARK_BLUE};letter-spacing:0.5px;text-transform:uppercase;">Distribución de Personal en los Paraderos, ${fechaDisplay}</div>
           <div style="margin-top:3px;"><span style="font-size:10px;font-weight:700;color:white;background:${filtroTipo === 'SALIDA' ? '#d97706' : '#2563eb'};padding:2px 8px;border-radius:4px;">${tipoLabel}</span></div>
         </div>
-        <div style="font-size:10px;color:#555;text-align:right;">Fecha: ${fechaDisplay}</div>
       </div>
       <table>
         <thead>
@@ -583,10 +583,8 @@ export default function DashboardPanel({ refresh, onDiaChange: _onDiaChange, sho
     const grandS = (extra?: any): any => ({ font: { bold: true, color: { rgb: WHITE }, sz: 9 }, fill: { fgColor: { rgb: DARK_BLUE } }, border: brdDark, alignment: { horizontal: 'center', vertical: 'center' }, ...extra })
 
     let r = 0
-    sc(r, 0, `Distribución de Personal en los Paraderos — ${tipoLabel}`, { font: { bold: true, sz: 13, color: { rgb: DARK_BLUE } }, alignment: { horizontal: 'left' } })
-    addMerge(r, 0, r, 5); r++
-    sc(r, 0, `Fecha: ${fechaDisplay}`, { font: { sz: 9, color: { rgb: '555555' } } })
-    addMerge(r, 0, r, 5); r++; r++
+    sc(r, 0, `Distribución de Personal en los Paraderos — ${tipoLabel}, ${fechaDisplay}`, { font: { bold: true, sz: 13, color: { rgb: DARK_BLUE } }, alignment: { horizontal: 'left' } })
+    addMerge(r, 0, r, 15); r++; r++
 
     // Header row 1: HORARIO + agrupadores + TOTAL
     let c = 0
@@ -646,15 +644,15 @@ export default function DashboardPanel({ refresh, onDiaChange: _onDiaChange, sho
     scf(r, totCol, `SUM(${encC(totCol)}${firstDataRow+1}:${encC(totCol)}${lastDataRow+1})`, grandS({ font: { bold: true, sz: 10, color: { rgb: WHITE } } }))
 
     ws['!cols'] = [{ wch: 16 }, ...parUsados.map(() => ({ wch: 5 })), { wch: 7 }]
-    ws['!rows'] = [undefined, undefined, undefined, { hpt: 20 }, { hpt: 80 }, ...hors.map(() => ({ hpt: 16 }))]
+    ws['!rows'] = [undefined, undefined, { hpt: 20 }, { hpt: 80 }, ...hors.map(() => ({ hpt: 16 }))]
     ws['!merges'] = merges
     ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r, c } })
 
     XLSX.utils.book_append_sheet(wb, ws, 'Por Paradero')
-    XLSX.writeFile(wb, `paraderos_${tipoLabel.toLowerCase()}_${new Date().toISOString().slice(0, 10)}.xlsx`)
+    XLSX.writeFile(wb, `paraderos_${tipoLabel.toLowerCase()}_${fechaBase}.xlsx`)
   }
 
-    const exportarReporteComedoresT = (filtroTipo: 'SALIDA' | 'RECOJO') => {
+  const exportarReporteComedoresT = (filtroTipo: 'SALIDA' | 'RECOJO') => {
     const fechaBase = filtroTipo === 'SALIDA' ? dateSalida : dateRecojo
     const fechaDisplay = new Date(fechaBase + 'T12:00:00').toLocaleDateString('es-PE', { weekday: 'short', day: '2-digit', month: '2-digit', year: '2-digit' })
     const color = filtroTipo === 'SALIDA' ? '#d97706' : '#2563eb'
@@ -790,12 +788,11 @@ export default function DashboardPanel({ refresh, onDiaChange: _onDiaChange, sho
       body{font-family:Arial,sans-serif;font-size:9px;margin:16px;background:white}
       @media print{body{margin:8px} @page{size:landscape;margin:6mm}}
     </style></head><body>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
         <div>
-          <h2 style="margin:0 0 4px;font-size:13px;font-weight:800">Distribución de personal en comedores</h2>
+          <h2 style="margin:0 0 4px;font-size:13px;font-weight:800">Distribución de personal en comedores, ${fechaDisplay}</h2>
           <span style="font-size:11px;font-weight:700;color:${color};padding:2px 10px;background:${colorLight};border-radius:4px;border:1px solid ${color}">${tipoLabel}</span>
         </div>
-        <span style="font-size:10px;color:#555">Fecha: ${fechaDisplay}</span>
       </div>
       <table style="border-collapse:collapse;font-size:9px;width:auto">
         <thead>
@@ -863,8 +860,7 @@ export default function DashboardPanel({ refresh, onDiaChange: _onDiaChange, sho
     const addMerge = (r1: number, c1: number, r2: number, c2: number) => merges.push({s:{r:r1,c:c1},e:{r:r2,c:c2}})
 
     let r = 0
-    sc(r, 0, `Distribución de personal en comedores — ${tipoLabel}`, {font:{bold:true,sz:13},alignment:{horizontal:'left'}}); addMerge(r,0,r,5); r++
-    sc(r, 0, `Fecha: ${fechaDisplay}`, {font:{sz:9,color:{rgb:'555555'}}}); addMerge(r,0,r,5); r++; r++
+    sc(r, 0, `Distribución de personal en comedores — ${tipoLabel}, ${fechaDisplay}`, {font:{bold:true,sz:13},alignment:{horizontal:'left'}}); addMerge(r,0,r,5); r++; r++
 
     const FIXED_COLS = 4 // RUTA, LOTE, COM, TOTAL
 
@@ -883,6 +879,10 @@ export default function DashboardPanel({ refresh, onDiaChange: _onDiaChange, sho
     r++
 
     // Header row 2: area subcolumns + Sub Total per hor
+    // Write empty bordered cells for fixed columns (they are merged from row above but need borders)
+    for (let fc = 0; fc < FIXED_COLS; fc++) {
+      sc(r, fc, '', thS({alignment:{horizontal:'center',vertical:'center'}}))
+    }
     c = FIXED_COLS
     hors.forEach((h) => {
       areasByHor[h].forEach((a) => { sc(r, c++, a, a === 'Cosecha Palto' ? thS2({ fill: { fgColor: { rgb: 'fef08a' } }, font: { bold: true, sz: 8, color: { rgb: '713f12' } } }) : thS2()) })
@@ -942,14 +942,20 @@ export default function DashboardPanel({ refresh, onDiaChange: _onDiaChange, sho
       if (isFirstRuta) {
         rutaStartRow[gk] = r
         sc(r, c, fila.rutaDisplay !== undefined ? fila.rutaDisplay : fila.ruta, fila.rutaDisplay !== undefined
-          ? tdS({fill:{fgColor:{rgb:'f3f4f6'}},font:{bold:true,color:{rgb:'6b7280'},sz:9}})
-          : tdS({fill:{fgColor:{rgb:BLUE_PALE}},font:{bold:true,color:{rgb:'2563eb'},sz:9}}))
+          ? tdS({fill:{fgColor:{rgb:'f3f4f6'}},font:{bold:true,color:{rgb:'6b7280'},sz:9},border:brd,alignment:{horizontal:'center',vertical:'center'}})
+          : tdS({fill:{fgColor:{rgb:BLUE_PALE}},font:{bold:true,color:{rgb:'2563eb'},sz:9},border:brd,alignment:{horizontal:'center',vertical:'center'}}))
         if (rutaSpan[gk] > 1) addMerge(r, 0, r+rutaSpan[gk]-1, 0)
+      } else {
+        // Still write border for non-first rows (xlsx-js-style needs explicit border on each cell even in merged range)
+        sc(r, c, '', tdS({fill:{fgColor:{rgb: fila.rutaDisplay !== undefined ? 'f3f4f6' : BLUE_PALE}},border:brd}))
       }
       c++
       const bg = fi%2===0 ? WHITE : 'f9fafb'
-      if (fila.lbl) { sc(r,c++,fila.lbl,tdS({font:{italic:true,color:{rgb:'6b7280'},sz:9},fill:{fgColor:{rgb:bg}}})); addMerge(r,1,r,2); c++ }
-      else { sc(r,c++,fila.lote,tdS({fill:{fgColor:{rgb:bg}}})); sc(r,c++,fila.com,tdS({fill:{fgColor:{rgb:bg}}})) }
+      if (fila.lbl) { sc(r,c++,fila.lbl,tdS({font:{italic:true,color:{rgb:'6b7280'},sz:9},fill:{fgColor:{rgb:bg}},border:brd})); addMerge(r,1,r,2); c++ }
+      else {
+        sc(r,c++,fila.lote,tdS({fill:{fgColor:{rgb:bg}},border:brd}))
+        sc(r,c++,fila.com,tdS({fill:{fgColor:{rgb:bg}},border:brd}))
+      }
       // TOTAL col placeholder - filled after hors loop
       const totalColIdx = c; c++
       const subColIndices: number[] = []
@@ -972,7 +978,7 @@ export default function DashboardPanel({ refresh, onDiaChange: _onDiaChange, sho
       })
       // Fill TOTAL formula
       const subRefs = subColIndices.map(ci => `${encC(ci)}${r+1}`).join(',')
-      scf(r, totalColIdx, subRefs ? `SUM(${subRefs})` : '0', tdS({font:{bold:true,color:{rgb:'059669'},sz:9},fill:{fgColor:{rgb:GREEN_PALE}}}))
+      scf(r, totalColIdx, subRefs ? `SUM(${subRefs})` : '0', tdS({font:{bold:true,color:{rgb:'059669'},sz:9},fill:{fgColor:{rgb:GREEN_PALE}},border:brd}))
       r++
     })
 
@@ -998,26 +1004,24 @@ export default function DashboardPanel({ refresh, onDiaChange: _onDiaChange, sho
     })
 
     const totalCols = FIXED_COLS + hors.reduce((a,h) => a+areasByHor[h].length+1, 0)
-    // Column width: fixed comfortable width for numbers, text is rotated so column width = number readability
     ws['!cols'] = [
-      {wch:8},   // RUTA
-      {wch:5},   // LOTE
-      {wch:5},   // COM
-      {wch:7},   // TOTAL
+      {wch:12},  // RUTA
+      {wch:6},   // LOTE
+      {wch:6},   // COM
+      {wch:8},   // TOTAL
       ...hors.flatMap((h) => [
-        ...areasByHor[h].map(() => ({wch:5})),  // area cols: narrow, numbers fit in 5
-        {wch:8}   // Sub Total: slightly wider
+        ...areasByHor[h].map(() => ({wch:5})),
+        {wch:8}   // Sub Total
       ])
     ]
-    // Row heights: header rows taller to show rotated text fully
     const maxAreaLen = hors.reduce((max: number, h: string) =>
       Math.max(max, ...areasByHor[h].map((a: string) => a.length)), 0)
-    const headerHeight = Math.max(80, maxAreaLen * 5.5) // ~5.5pt per char rotated
-    ws['!rows'] = [undefined, undefined, undefined, {hpt:18}, {hpt: headerHeight}]
+    const headerHeight = Math.max(80, maxAreaLen * 5.5)
+    ws['!rows'] = [undefined, undefined, {hpt:18}, {hpt: headerHeight}]
     ws['!merges'] = merges
     ws['!ref'] = XLSX.utils.encode_range({s:{r:0,c:0},e:{r,c:totalCols-1}})
     XLSX.utils.book_append_sheet(wb, ws, 'Comedores')
-    XLSX.writeFile(wb, `comedores_horario_${tipoLabel.toLowerCase()}_${new Date().toISOString().slice(0,10)}.xlsx`)
+    XLSX.writeFile(wb, `comedores_horario_${tipoLabel.toLowerCase()}_${fechaBase}.xlsx`)
   }
 
   const ResumenCard = ({ tipo }: { tipo: 'SALIDA' | 'RECOJO' }) => {
@@ -1190,7 +1194,6 @@ export default function DashboardPanel({ refresh, onDiaChange: _onDiaChange, sho
         <ResumenCard tipo="SALIDA" />
         <ResumenCard tipo="RECOJO" />
       </div>
-
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <CobCard tipo="SALIDA" />
