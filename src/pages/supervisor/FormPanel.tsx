@@ -245,12 +245,6 @@ export default function FormPanel({ formState, onBack, onSaved }: Props) {
 
   if (!usuario) return null
 
-  const fechaLabel = new Date(fechaProgram + 'T12:00:00').toLocaleDateString('es-PE', {
-    weekday: 'long',
-    day: '2-digit',
-    month: 'long',
-  })
-
   return (
     <div>
       <div className="flex items-center gap-2 py-2 mb-2">
