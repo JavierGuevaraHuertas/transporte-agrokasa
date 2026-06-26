@@ -350,17 +350,17 @@ export default function FormPanel({ formState, onBack, onSaved }: Props) {
         })}
       </div>
 
-      <div className="bg-white rounded-xl overflow-auto mb-3 border border-gray-100">
+      <div className="bg-white rounded-xl overflow-auto mb-3 border border-gray-100 max-h-[65vh] relative">
         <table className="text-xs w-full border-collapse">
           <thead>
             <tr>
-              <th className="bg-primary-600 text-white px-2 py-2 text-center text-xs font-semibold sticky left-0 z-10">
+              <th className="bg-primary-600 text-white px-2 py-2 text-center text-xs font-semibold sticky top-0 left-0 z-30">
                 Lote / Comedor
               </th>
               {AGR[cagr].map((p, pi) => (
                 <th
                   key={p}
-                  className={`text-white font-normal border-l border-primary-400 ${
+                  className={`sticky top-0 z-20 text-white font-normal border-l border-primary-400 ${
                     pi % 2 === 0 ? 'bg-primary-600' : 'bg-primary-700'
                   }`}
                   style={{ minWidth: '30px', maxWidth: '30px', padding: 0 }}
@@ -393,7 +393,7 @@ export default function FormPanel({ formState, onBack, onSaved }: Props) {
                   </div>
                 </th>
               ))}
-              <th className="bg-primary-600 text-white px-2 py-2 text-center text-xs font-semibold text-green-200 border-l-2 border-primary-400">
+              <th className="bg-primary-600 text-white px-2 py-2 text-center text-xs font-semibold text-green-200 border-l-2 border-primary-400 sticky top-0 z-20">
                 Total
               </th>
             </tr>
