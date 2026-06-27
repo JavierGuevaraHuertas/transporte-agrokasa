@@ -1,25 +1,23 @@
 import { useEffect, useState } from 'react'
-import { useAuth } from '../../hooks/useAuth'
 import type { TipoProgram } from '../../types'
-import {
-  getDia,
-  getProgramacionesByUser,
-  getProgramacionDetalle,
-  deleteProgramacion,
-} from '../../lib/api'
+import { useAuth } from '../../hooks/useAuth'
+import { getDia, getProgramacionesByUser, getProgramacionDetalle, deleteProgramacion } from '../../lib/api'
 import { ALLP, AGR, AGK } from '../../utils/constants'
 import type { Programacion } from '../../lib/database.types'
+
 interface Props {
   tipo: TipoProgram
   refresh: number
   onBack: () => void
-  onNew: () => void
+  onNew: (fecha: string) => void
   onEdit: (key: string, tipo: TipoProgram, hor: string, area: string, fecha: string) => void
 }
+
 /**
  * SALIDA consulta hoy.
  * RECOJO/INGRESO consulta mañana.
  * Si hoy es sábado, RECOJO consulta lunes.
+ * (Esto solo se usa como fecha INICIAL por defecto; el usuario puede cambiarla.)
  */
 function calcFechaConsulta(tipo: TipoProgram): string {
   const fecha = new Date()
@@ -33,24 +31,39 @@ function calcFechaConsulta(tipo: TipoProgram): string {
   }
   return fecha.toISOString().slice(0, 10)
 }
+
+function addDias(fecha: string, dias: number): string {
+  const d = new Date(fecha + 'T12:00:00')
+  d.setDate(d.getDate() + dias)
+  return d.toISOString().slice(0, 10)
+}
+
 export default function ListaPanel({ tipo, refresh, onBack, onNew, onEdit }: Props) {
   const { usuario } = useAuth()
   const today = new Date().toISOString().slice(0, 10)
-  const fechaConsulta = calcFechaConsulta(tipo)
-  const esAjuste = fechaConsulta !== today
+  const tomorrow = addDias(today, 1)
+
+  // Fecha seleccionada por el usuario para ver/crear programaciones.
+  // Por defecto usa el cálculo automático (hoy para SALIDA, mañana para RECOJO).
+  const [fechaSel, setFechaSel] = useState<string>(() => calcFechaConsulta(tipo))
+
+  const esHoy = fechaSel === today
+  const esMañana = fechaSel === tomorrow
+
   const [bloq, setBloq] = useState(false)
   const [items, setItems] = useState<Programacion[]>([])
   const [loading, setLoading] = useState(true)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [confirmItem, setConfirmItem] = useState<Programacion | null>(null)
+
   useEffect(() => {
     let active = true
     async function cargar() {
       if (!usuario) return
       try {
         setLoading(true)
-        const allProgs = await getProgramacionesByUser(usuario.id, fechaConsulta)
-        const dia = await getDia(fechaConsulta)
+        const allProgs = await getProgramacionesByUser(usuario.id, fechaSel)
+        const dia = await getDia(fechaSel)
         if (!active) return
         const estadoTipo = tipo === 'SALIDA' ? dia?.estado_salida : dia?.estado_recojo
         setBloq(estadoTipo === 'cerrado' || dia?.estado === 'cerrado')
@@ -66,10 +79,15 @@ export default function ListaPanel({ tipo, refresh, onBack, onNew, onEdit }: Pro
       }
     }
     void cargar()
-    return () => { active = false }
-  }, [usuario, fechaConsulta, tipo, refresh])
+    return () => {
+      active = false
+    }
+  }, [usuario, fechaSel, tipo, refresh])
+
   if (!usuario) return null
+
   const confirmarEliminar = (m: Programacion) => setConfirmItem(m)
+
   const eliminar = async () => {
     if (!confirmItem) return
     const m = confirmItem
@@ -84,6 +102,7 @@ export default function ListaPanel({ tipo, refresh, onBack, onNew, onEdit }: Pro
       setDeletingId(null)
     }
   }
+
   const verReporte = async (m: Programacion) => {
     try {
       const detalle = await getProgramacionDetalle(m.id)
@@ -203,6 +222,7 @@ export default function ListaPanel({ tipo, refresh, onBack, onNew, onEdit }: Pro
       console.error('Error generando reporte:', e)
     }
   }
+
   const descargarReporte = async (m: Programacion) => {
     try {
       const detalle = await getProgramacionDetalle(m.id)
@@ -337,6 +357,13 @@ export default function ListaPanel({ tipo, refresh, onBack, onNew, onEdit }: Pro
       console.error('Error descargando reporte:', e)
     }
   }
+
+  const fechaLabel = new Date(fechaSel + 'T12:00:00').toLocaleDateString('es-PE', {
+    weekday: 'long',
+    day: '2-digit',
+    month: 'long',
+  })
+
   return (
     <div>
       <div className="flex items-center gap-2 py-2 mb-2">
@@ -350,34 +377,67 @@ export default function ListaPanel({ tipo, refresh, onBack, onNew, onEdit }: Pro
           Volver al inicio
         </button>
       </div>
+
       <div className="flex items-center justify-between mb-3">
-        <div>
-          <h2 className="text-sm font-bold text-gray-900">
-            {tipo === 'SALIDA' ? 'Salida' : 'Ingreso'}
-          </h2>
-          {esAjuste && (
-            <p className="text-xs text-amber-600 mt-0.5">
-              📅 Mostrando programación de ingreso
-            </p>
-          )}
-        </div>
+        <h2 className="text-sm font-bold text-gray-900">
+          {tipo === 'SALIDA' ? 'Salida' : 'Ingreso'}
+        </h2>
         <button
-          onClick={onNew}
+          onClick={() => onNew(fechaSel)}
           disabled={bloq}
           className="btn-primary text-xs py-1.5 px-3 disabled:bg-gray-300"
         >
           {bloq ? '🔒 Cerrado' : '+ Nueva'}
         </button>
       </div>
+
+      {/* Selector de fecha para ver/crear programaciones de cualquier día */}
+      <div className="card mb-3">
+        <label className="block text-xs font-semibold text-gray-500 mb-1.5">
+          Fecha de programación
+        </label>
+        <div className="flex items-center gap-2">
+          <input
+            type="date"
+            value={fechaSel}
+            onChange={(e) => setFechaSel(e.target.value || today)}
+            className="input-base flex-1"
+          />
+          <button
+            onClick={() => setFechaSel(today)}
+            className={`px-2.5 py-1.5 text-xs font-semibold rounded-lg border transition-all ${
+              esHoy
+                ? 'bg-primary-600 border-primary-600 text-white'
+                : 'bg-white border-gray-300 text-gray-600 hover:border-primary-400'
+            }`}
+          >
+            Hoy
+          </button>
+          <button
+            onClick={() => setFechaSel(tomorrow)}
+            className={`px-2.5 py-1.5 text-xs font-semibold rounded-lg border transition-all ${
+              esMañana
+                ? 'bg-primary-600 border-primary-600 text-white'
+                : 'bg-white border-gray-300 text-gray-600 hover:border-primary-400'
+            }`}
+          >
+            Mañana
+          </button>
+        </div>
+        <p className="text-xs text-gray-400 mt-1.5 capitalize">
+          📅 {fechaLabel}
+        </p>
+      </div>
+
       {loading ? (
         <div className="text-center py-10 text-gray-400 text-sm">
           <p>Cargando programaciones...</p>
         </div>
       ) : items.length === 0 ? (
         <div className="text-center py-10 text-gray-400 text-sm">
-          <p className="mb-3">Sin programaciones aún</p>
+          <p className="mb-3">Sin programaciones aún para esta fecha</p>
           {!bloq && (
-            <button onClick={onNew} className="btn-primary text-xs">
+            <button onClick={() => onNew(fechaSel)} className="btn-primary text-xs">
               + Nueva programación
             </button>
           )}
@@ -441,6 +501,7 @@ export default function ListaPanel({ tipo, refresh, onBack, onNew, onEdit }: Pro
           ))}
         </div>
       )}
+
       {confirmItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
           <div className="bg-white rounded-2xl shadow-xl p-5 w-full max-w-sm">

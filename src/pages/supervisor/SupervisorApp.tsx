@@ -68,7 +68,7 @@ export default function SupervisorApp() {
               tipo={formState.tipo}
               refresh={refresh}
               onBack={() => setView('menu')}
-              onNew={() => goForm(formState.tipo, null, null, null)}
+              onNew={(fecha) => goForm(formState.tipo, null, null, null, fecha)}
               onEdit={(key, tipo, hor, area, fecha) => goForm(tipo, key, hor, area, fecha)}
             />
           )}
