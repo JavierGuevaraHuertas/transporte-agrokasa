@@ -422,7 +422,7 @@ export default function DashboardPanel({ refresh, onDiaChange: _onDiaChange, sho
 
   // Orden canónico de horarios para sorting
   const ORDEN_SALIDA = ['Salida 13:00','Salida 14:00','Salida 15:30','Salida 16:30','Salida 17:00','Salida 17:30','Salida 23:00','Salida 2:00']
-  const ORDEN_RECOJO = ['De 05:00 a 14:00','De 06:30 a 15:30','De 07:30 a 16:30','De 17:00 a 02:00']
+  const ORDEN_RECOJO = ['De 05:00 a 14:00','De 06:00 a 15:00','De 07:00 a 16:00','De 06:30 a 15:30','De 07:30 a 16:30','De 17:00 a 02:00']
 
   const sortHorarios = (hors: string[], tipo: 'SALIDA' | 'RECOJO') => {
     const orden = tipo === 'SALIDA' ? ORDEN_SALIDA : ORDEN_RECOJO
