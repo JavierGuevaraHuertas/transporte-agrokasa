@@ -14,7 +14,7 @@ export const AGR: Record<string, string[]> = {
     'Colegio Michell',
   ],
   PARAMONGA: ['Urb.07 de Junio', 'Plaza de Armas'],
-  PATIVILCA: ['El Porvenir', 'Buenos Aires', 'La Paradita', 'Grifo Alex', 'Vista Alegre / Galpon / Milagros'],
+  PATIVILCA: ['El Porvenir', 'Buenos Aires', 'La Paradita', 'Grifo Alex', 'Vista Alegre / Galpon / Milagros', 'Caraqueño'],
   MOLINOS: ['Paradero de Mototaxi'],
   ARENALES: ['1er Paradero'],
   AGROPENSA: ['Chiu Chiu', 'Sta. Elena', 'Agropensa', '1° de Mayo'],
