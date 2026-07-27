@@ -20,7 +20,7 @@ interface Props {
  *  Para RECOJO:
  *    - Sábado (day=6) → lunes siguiente (+2 días), porque domingo no se labora
  *    - Cualquier otro día → día siguiente (+1 día)
- *  Para SALIDA: siempre hoy. */
+ *  Para SALIDA: siempre hoy (el usuario puede ajustarla manualmente, p.ej. feriados). */
 function calcFechaDefault(tipo: string): string {
   const now = new Date()
   const day = now.getDay() // 0=dom, 1=lun ... 6=sab
@@ -298,23 +298,21 @@ export default function FormPanel({ formState, onBack, onSaved }: Props) {
           </select>
         </div>
 
-        {/* Fecha de programación — solo visible para RECOJO */}
-        {tipo === 'RECOJO' && (
-          <div className="col-span-2">
-            <label className="block text-xs font-semibold text-gray-500 mb-1">
-              Fecha de programación
-            </label>
-            <div className="flex items-center gap-2">
-              <input
-                type="date"
-                value={fechaProgram}
-                onChange={(e) => setFechaProgram(e.target.value || today)}
-                disabled={bloq || saving}
-                className="input-base flex-1"
-              />
-            </div>
+        {/* Fecha de programación — visible para SALIDA y RECOJO */}
+        <div className="col-span-2">
+          <label className="block text-xs font-semibold text-gray-500 mb-1">
+            Fecha de programación
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              type="date"
+              value={fechaProgram}
+              onChange={(e) => setFechaProgram(e.target.value || today)}
+              disabled={bloq || saving}
+              className="input-base flex-1"
+            />
           </div>
-        )}
+        </div>
 
         <div className="col-span-2 bg-green-50 rounded-lg px-3 py-2 flex justify-between items-center">
           <span className="text-xs font-semibold text-green-700">Total personas</span>
