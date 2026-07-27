@@ -1,5 +1,4 @@
 import type { Horario, FilaRuta } from '../types'
-
 export const AGR: Record<string, string[]> = {
   BARRANCA: ['Mercado Nuevo Amanecer', 'Argos', 'Los Pinos', 'La Florida'],
   SUPE: [
@@ -21,14 +20,12 @@ export const AGR: Record<string, string[]> = {
   PAMPAS: ['Vinto Alto', 'Vinto Bajo', 'Vista Alegre', 'Pampa (Posta)'],
   ARAYA: ['Parque Principal'],
   CASUARINAS: ['Casuarinas'],
+  HUAURA: ['Medio Mundo'],
 }
-
 export const AGK = Object.keys(AGR)
-
 export const ALLP: { ag: string; p: string }[] = AGK.flatMap((ag) =>
   AGR[ag].map((p) => ({ ag, p }))
 )
-
 export const RUTAS: Record<string, FilaRuta[]> = {
   'R-1': [{ l: 1, c: 1 }, { l: 2, c: 1 }, { l: 3, c: 1 }],
   'R-2': [
@@ -67,7 +64,6 @@ export const RUTAS: Record<string, FilaRuta[]> = {
     { lbl: 'BASE ACOPIO', rutaDisplay: ' ' },
   ],
 }
-
 export const HOR: Record<string, Horario[]> = {
   RECOJO: [
     { id: 'Rec.05:00-14:00', label: 'De 05:00 a 14:00' },
@@ -90,7 +86,6 @@ export const HOR: Record<string, Horario[]> = {
     { id: 'Sal.2:00',  label: 'Salida 2:00'  },
   ],
 }
-
 export const ALL_AREAS = [
   'Apicola',
   'Aplicacion Arándano',
@@ -111,7 +106,6 @@ export const ALL_AREAS = [
   'Labores Palto Fundo 1',
   'Labores Palto Fundo 2',
 ]
-
 export const AREA_COLORS = [
   '#1a7a3c',
   '#2563eb',
@@ -124,6 +118,5 @@ export const AREA_COLORS = [
   '#ea580c',
   '#0284c7',
 ]
-
 export const getRid = (ruta: string, fila: FilaRuta) =>
   fila.lbl ? `${ruta}_${fila.lbl}` : `${ruta}_${fila.l}_${fila.c}`
