@@ -161,24 +161,74 @@ export default function TendenciasPanel({ refresh }: Props) {
     return Object.entries(byArea).sort((a: [string,number], b: [string,number]) => b[1] - a[1])[0] as [string, number] | undefined
   }, [filtered])
 
-  // Top paraderos
+  // Details restricted to the areas currently toggled ON (chips arriba)
+  const visibleFilteredDetails = useMemo(
+    () => filteredDetails.filter((m: ProgDetail) => visible[m.area] !== false),
+    [filteredDetails, visible]
+  )
+
+  // Top paraderos (respeta el filtro de área seleccionada)
   const topParaderos = useMemo((): [string, number][] => {
     const byPar: Record<string, number> = {}
-    filteredDetails.forEach((m: ProgDetail) => {
+    visibleFilteredDetails.forEach((m: ProgDetail) => {
       Object.entries(m.parData).forEach(([p, v]: [string, number]) => { byPar[p] = (byPar[p] || 0) + v })
     })
     return Object.entries(byPar).sort((a: [string,number], b: [string,number]) => b[1] - a[1]).slice(0, 10)
-  }, [filteredDetails])
+  }, [visibleFilteredDetails])
 
-  // Top agrupadores
+  // Top agrupadores (respeta el filtro de área seleccionada)
   const topAgrupadores = useMemo((): [string, number][] => {
     const byAg: Record<string, number> = {}
     AGK.forEach((ag: string) => { byAg[ag] = 0 })
-    filteredDetails.forEach((m: ProgDetail) => {
+    visibleFilteredDetails.forEach((m: ProgDetail) => {
       ALLP.forEach(({ ag, p }: { ag: string; p: string }) => { byAg[ag] = (byAg[ag] || 0) + (m.parData[p] || 0) })
     })
     return Object.entries(byAg).filter(([, v]: [string, number]) => v > 0).sort((a: [string,number], b: [string,number]) => b[1] - a[1])
-  }, [filteredDetails])
+  }, [visibleFilteredDetails])
+
+  // Cuadro semanal por paradero (respeta el filtro de área seleccionada)
+  const weeklyParaderos = useMemo(() => {
+    const weeks: string[] = Array.from<string>(new Set(visibleFilteredDetails.map((m: ProgDetail) => getWeekKey(m.fecha)))).sort()
+    const byParWeek: Record<string, Record<string, number>> = {}
+    visibleFilteredDetails.forEach((m: ProgDetail) => {
+      const wk = getWeekKey(m.fecha)
+      Object.entries(m.parData).forEach(([p, v]: [string, number]) => {
+        if (!byParWeek[p]) byParWeek[p] = {}
+        byParWeek[p][wk] = (byParWeek[p][wk] || 0) + v
+      })
+    })
+    const rows = Object.entries(byParWeek)
+      .map(([p, wm]: [string, Record<string, number>]) => ({
+        nombre: p,
+        weekMap: wm,
+        total: (Object.values(wm) as number[]).reduce((a: number, b: number) => a + b, 0),
+      }))
+      .sort((a, b) => b.total - a.total)
+    return { weeks, rows }
+  }, [visibleFilteredDetails])
+
+  // Cuadro semanal por zona/agrupador (respeta el filtro de área seleccionada)
+  const weeklyZonas = useMemo(() => {
+    const weeks: string[] = Array.from<string>(new Set(visibleFilteredDetails.map((m: ProgDetail) => getWeekKey(m.fecha)))).sort()
+    const byAgWeek: Record<string, Record<string, number>> = {}
+    visibleFilteredDetails.forEach((m: ProgDetail) => {
+      const wk = getWeekKey(m.fecha)
+      ALLP.forEach(({ ag, p }: { ag: string; p: string }) => {
+        const v = m.parData[p] || 0
+        if (v === 0) return
+        if (!byAgWeek[ag]) byAgWeek[ag] = {}
+        byAgWeek[ag][wk] = (byAgWeek[ag][wk] || 0) + v
+      })
+    })
+    const rows = Object.entries(byAgWeek)
+      .map(([ag, wm]: [string, Record<string, number>]) => ({
+        nombre: ag,
+        weekMap: wm,
+        total: (Object.values(wm) as number[]).reduce((a: number, b: number) => a + b, 0),
+      }))
+      .sort((a, b) => b.total - a.total)
+    return { weeks, rows }
+  }, [visibleFilteredDetails])
 
   const maxPar = topParaderos[0]?.[1] || 1
   const maxAg = topAgrupadores[0]?.[1] || 1
@@ -403,6 +453,68 @@ export default function TendenciasPanel({ refresh }: Props) {
         </div>
 
       </div>
+
+      {/* Cuadro semanal: Paraderos */}
+      {weeklyParaderos.weeks.length > 0 && (
+        <div className="card mb-3">
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">📍 Paraderos por semana</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs border-collapse">
+              <thead>
+                <tr>
+                  <th className="text-left py-1.5 pr-3 text-gray-400 font-semibold sticky left-0 bg-white whitespace-nowrap">Paradero</th>
+                  {weeklyParaderos.weeks.map((w: string) => (
+                    <th key={w} className="text-right py-1.5 px-2 text-gray-400 font-semibold whitespace-nowrap">{fmtWeek(w)}</th>
+                  ))}
+                  <th className="text-right py-1.5 pl-3 text-gray-700 font-bold whitespace-nowrap">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {weeklyParaderos.rows.map((row) => (
+                  <tr key={row.nombre} className="border-t border-gray-100">
+                    <td className="py-1.5 pr-3 font-semibold text-gray-700 sticky left-0 bg-white whitespace-nowrap">{row.nombre}</td>
+                    {weeklyParaderos.weeks.map((w: string) => (
+                      <td key={w} className="text-right py-1.5 px-2 text-gray-600">{(row.weekMap[w] || 0).toLocaleString()}</td>
+                    ))}
+                    <td className="text-right py-1.5 pl-3 font-bold text-gray-800">{row.total.toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Cuadro semanal: Zonas */}
+      {weeklyZonas.weeks.length > 0 && (
+        <div className="card mb-3">
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">🏘 Zonas por semana</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs border-collapse">
+              <thead>
+                <tr>
+                  <th className="text-left py-1.5 pr-3 text-gray-400 font-semibold sticky left-0 bg-white whitespace-nowrap">Zona</th>
+                  {weeklyZonas.weeks.map((w: string) => (
+                    <th key={w} className="text-right py-1.5 px-2 text-gray-400 font-semibold whitespace-nowrap">{fmtWeek(w)}</th>
+                  ))}
+                  <th className="text-right py-1.5 pl-3 text-gray-700 font-bold whitespace-nowrap">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {weeklyZonas.rows.map((row) => (
+                  <tr key={row.nombre} className="border-t border-gray-100">
+                    <td className="py-1.5 pr-3 font-semibold text-gray-700 sticky left-0 bg-white whitespace-nowrap">{row.nombre}</td>
+                    {weeklyZonas.weeks.map((w: string) => (
+                      <td key={w} className="text-right py-1.5 px-2 text-gray-600">{(row.weekMap[w] || 0).toLocaleString()}</td>
+                    ))}
+                    <td className="text-right py-1.5 pl-3 font-bold text-gray-800">{row.total.toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
