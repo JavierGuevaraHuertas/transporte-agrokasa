@@ -16,7 +16,6 @@ import {
 import * as XLSX from 'xlsx-js-style'
 import { AREA_COLORS, ALLP, AGK } from '../../utils/constants'
 import { getAllProgramaciones, getProgramacionDetalle } from '../../lib/api'
-
 Chart.register(
   CategoryScale, LinearScale, PointElement, LineElement, LineController,
   BarElement, BarController, Title, Tooltip, Legend, Filler
@@ -48,6 +47,11 @@ function fmtWeek(wk: string) {
   const d = new Date(wk + 'T00:00:00')
   return `${d.getDate()}/${d.getMonth() + 1}`
 }
+const ZONE_COLORS = ['#1a7a3c','#2563eb','#dc2626','#d97706','#7c3aed','#0891b2','#db2777','#65a30d','#ea580c','#0284c7','#16a34a','#4f46e5']
+function colorForZona(ag: string) {
+  const i = AGK.indexOf(ag)
+  return ZONE_COLORS[(i < 0 ? 0 : i) % ZONE_COLORS.length]
+}
 // Número de semana ISO-8601 (el mismo que usan los calendarios: la semana actual, p.ej. 34)
 function getISOWeek(wk: string) {
   const d = new Date(wk + 'T00:00:00')
@@ -65,11 +69,12 @@ function exportWeeklyExcel(
   nombreLabel: string,
   weeks: string[],
   weekNumberMap: Record<string, number>,
-  rows: { nombre: string; weekMap: Record<string, number>; total: number }[]
+  rows: { nombre: string; zona?: string; weekMap: Record<string, number>; total: number }[]
 ) {
   if (rows.length === 0) { alert('Sin datos para exportar'); return }
-  const header = [nombreLabel, ...weeks.map((w) => `Sem ${weekNumberMap[w]} (${fmtWeek(w)})`), 'Prom. diario']
-  const data = rows.map((r) => [r.nombre, ...weeks.map((w) => r.weekMap[w] || 0), r.total])
+  const hasZona = rows.some((r) => r.zona !== undefined)
+  const header = [nombreLabel, ...(hasZona ? ['Zona'] : []), ...weeks.map((w) => `Sem ${weekNumberMap[w]} (${fmtWeek(w)})`), 'Prom. diario']
+  const data = rows.map((r) => [r.nombre, ...(hasZona ? [r.zona || ''] : []), ...weeks.map((w) => r.weekMap[w] || 0), r.total])
   const ws = XLSX.utils.aoa_to_sheet([header, ...data])
 
   const headerStyle = {
@@ -86,7 +91,7 @@ function exportWeeklyExcel(
     if (cell) cell.s = { font: { bold: true } }
   })
 
-  ws['!cols'] = [{ wch: 28 }, ...weeks.map(() => ({ wch: 14 })), { wch: 14 }]
+  ws['!cols'] = [{ wch: 28 }, ...(hasZona ? [{ wch: 18 }] : []), ...weeks.map(() => ({ wch: 14 })), { wch: 14 }]
   ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: data.length, c: header.length - 1 } })
 
   const wb = XLSX.utils.book_new()
@@ -292,7 +297,7 @@ export default function TendenciasPanel({ refresh }: Props) {
           const days = daysPerWeek[wk] || 0
           weekMap[wk] = days > 0 ? Math.round(v / days) : 0
         })
-        return { nombre: p, weekMap, total: totalDays > 0 ? Math.round(rawTotal / totalDays) : 0 }
+        return { nombre: p, zona: ALLP.find((x: { ag: string; p: string }) => x.p === p)?.ag || '', weekMap, total: totalDays > 0 ? Math.round(rawTotal / totalDays) : 0 }
       })
       .sort((a, b) => b.total - a.total)
     return { weeks: visibleWeeks, rows }
@@ -581,10 +586,9 @@ export default function TendenciasPanel({ refresh }: Props) {
             <p className="text-center py-6 text-gray-300 text-xs">{loadingDetail ? 'Calculando…' : 'Sin datos'}</p>
           ) : (
             <div className="flex flex-col gap-2">
-              {topAgrupadores.map(([ag, val]: [string, number], i: number) => {
+              {topAgrupadores.map(([ag, val]: [string, number]) => {
                 const pct = Math.round((val / maxAg) * 100)
-                const ZONE_COLORS = ['#1a7a3c','#2563eb','#dc2626','#d97706','#7c3aed','#0891b2','#db2777','#65a30d','#ea580c','#0284c7']
-                const col = ZONE_COLORS[i % ZONE_COLORS.length]
+                const col = colorForZona(ag)
                 // Count paraderos in this zone
                 const parCount = ALLP.filter((x: {ag: string; p: string}) => x.ag === ag && topParaderos.some(([p]: [string, number]) => p === x.p)).length
                 return (
@@ -630,27 +634,39 @@ export default function TendenciasPanel({ refresh }: Props) {
               ⬇ Excel
             </button>
           </div>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto rounded-lg border border-gray-100">
             <table className="w-full text-xs border-collapse">
               <thead>
-                <tr>
-                  <th className="text-left py-1.5 pr-3 text-gray-400 font-semibold sticky left-0 bg-white whitespace-nowrap">Paradero</th>
+                <tr className="bg-gray-50">
+                  <th className="text-left py-2 pr-3 pl-2.5 text-gray-500 font-bold sticky left-0 bg-gray-50 whitespace-nowrap">Paradero</th>
                   {weeklyParaderos.weeks.map((w: string) => (
-                    <th key={w} className="text-right py-1.5 px-2 text-gray-400 font-semibold whitespace-nowrap" title={fmtWeek(w)}>Sem {weekNumberMap[w]}</th>
+                    <th key={w} className="text-right py-2 px-2 text-gray-500 font-bold whitespace-nowrap" title={fmtWeek(w)}>Sem {weekNumberMap[w]}</th>
                   ))}
-                  <th className="text-right py-1.5 pl-3 text-gray-700 font-bold whitespace-nowrap">Prom. diario</th>
+                  <th className="text-right py-2 pl-3 pr-2.5 text-gray-700 font-extrabold whitespace-nowrap">Prom. diario</th>
                 </tr>
               </thead>
               <tbody>
-                {weeklyParaderos.rows.map((row) => (
-                  <tr key={row.nombre} className="border-t border-gray-100">
-                    <td className="py-1.5 pr-3 font-semibold text-gray-700 sticky left-0 bg-white whitespace-nowrap">{row.nombre}</td>
-                    {weeklyParaderos.weeks.map((w: string) => (
-                      <td key={w} className="text-right py-1.5 px-2 text-gray-600">{(row.weekMap[w] || 0).toLocaleString()}</td>
-                    ))}
-                    <td className="text-right py-1.5 pl-3 font-bold text-gray-800">{row.total.toLocaleString()}</td>
-                  </tr>
-                ))}
+                {weeklyParaderos.rows.map((row, idx: number) => {
+                  const col = row.zona ? colorForZona(row.zona) : '#9ca3af'
+                  const rowBg = idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/70'
+                  return (
+                    <tr key={row.nombre} className={`border-t border-gray-100 ${rowBg} hover:bg-green-50 transition-colors`}>
+                      <td className={`py-1.5 pr-3 pl-2.5 sticky left-0 ${rowBg} whitespace-nowrap`}>
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: col }} />
+                          <div className="min-w-0">
+                            <div className="font-semibold text-gray-700 truncate max-w-[170px]">{row.nombre}</div>
+                            {row.zona && <div className="text-[10px] font-semibold truncate max-w-[170px]" style={{ color: col }}>{row.zona}</div>}
+                          </div>
+                        </div>
+                      </td>
+                      {weeklyParaderos.weeks.map((w: string) => (
+                        <td key={w} className="text-right py-1.5 px-2 text-gray-600">{(row.weekMap[w] || 0).toLocaleString()}</td>
+                      ))}
+                      <td className="text-right py-1.5 pl-3 pr-2.5 font-bold text-gray-800">{row.total.toLocaleString()}</td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -673,27 +689,36 @@ export default function TendenciasPanel({ refresh }: Props) {
               ⬇ Excel
             </button>
           </div>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto rounded-lg border border-gray-100">
             <table className="w-full text-xs border-collapse">
               <thead>
-                <tr>
-                  <th className="text-left py-1.5 pr-3 text-gray-400 font-semibold sticky left-0 bg-white whitespace-nowrap">Zona</th>
+                <tr className="bg-gray-50">
+                  <th className="text-left py-2 pr-3 pl-2.5 text-gray-500 font-bold sticky left-0 bg-gray-50 whitespace-nowrap">Zona</th>
                   {weeklyZonas.weeks.map((w: string) => (
-                    <th key={w} className="text-right py-1.5 px-2 text-gray-400 font-semibold whitespace-nowrap" title={fmtWeek(w)}>Sem {weekNumberMap[w]}</th>
+                    <th key={w} className="text-right py-2 px-2 text-gray-500 font-bold whitespace-nowrap" title={fmtWeek(w)}>Sem {weekNumberMap[w]}</th>
                   ))}
-                  <th className="text-right py-1.5 pl-3 text-gray-700 font-bold whitespace-nowrap">Prom. diario</th>
+                  <th className="text-right py-2 pl-3 pr-2.5 text-gray-700 font-extrabold whitespace-nowrap">Prom. diario</th>
                 </tr>
               </thead>
               <tbody>
-                {weeklyZonas.rows.map((row) => (
-                  <tr key={row.nombre} className="border-t border-gray-100">
-                    <td className="py-1.5 pr-3 font-semibold text-gray-700 sticky left-0 bg-white whitespace-nowrap">{row.nombre}</td>
-                    {weeklyZonas.weeks.map((w: string) => (
-                      <td key={w} className="text-right py-1.5 px-2 text-gray-600">{(row.weekMap[w] || 0).toLocaleString()}</td>
-                    ))}
-                    <td className="text-right py-1.5 pl-3 font-bold text-gray-800">{row.total.toLocaleString()}</td>
-                  </tr>
-                ))}
+                {weeklyZonas.rows.map((row, idx: number) => {
+                  const col = colorForZona(row.nombre)
+                  const rowBg = idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/70'
+                  return (
+                    <tr key={row.nombre} className={`border-t border-gray-100 ${rowBg} hover:bg-green-50 transition-colors`}>
+                      <td className={`py-1.5 pr-3 pl-2.5 sticky left-0 ${rowBg} whitespace-nowrap`}>
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ background: col }} />
+                          <span className="font-bold" style={{ color: col }}>{row.nombre}</span>
+                        </div>
+                      </td>
+                      {weeklyZonas.weeks.map((w: string) => (
+                        <td key={w} className="text-right py-1.5 px-2 text-gray-600">{(row.weekMap[w] || 0).toLocaleString()}</td>
+                      ))}
+                      <td className="text-right py-1.5 pl-3 pr-2.5 font-bold text-gray-800">{row.total.toLocaleString()}</td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
