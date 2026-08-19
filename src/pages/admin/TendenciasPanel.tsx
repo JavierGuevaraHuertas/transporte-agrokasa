@@ -55,6 +55,7 @@ export default function TendenciasPanel({ refresh }: Props) {
   })
   const [hasta, setHasta] = useState(new Date().toISOString().slice(0, 10))
   const [visible, setVisible] = useState<Record<string, boolean>>({})
+  const [weekVisible, setWeekVisible] = useState<Record<string, boolean>>({})
   const [all, setAll] = useState<ProgTrend[]>([])
   const [details, setDetails] = useState<ProgDetail[]>([])
   const [loadingDetail, setLoadingDetail] = useState(false)
@@ -73,6 +74,9 @@ export default function TendenciasPanel({ refresh }: Props) {
 
   const toggleArea = (a: string) =>
     setVisible((prev: Record<string, boolean>) => ({ ...prev, [a]: prev[a] === false ? true : false }))
+
+  const toggleWeek = (w: string) =>
+    setWeekVisible((prev: Record<string, boolean>) => ({ ...prev, [w]: prev[w] === false ? true : false }))
 
   // Load programaciones (totals only)
   useEffect(() => {
@@ -152,6 +156,21 @@ export default function TendenciasPanel({ refresh }: Props) {
   )
   const areas = useMemo(() => Array.from<string>(new Set(filtered.map((x: ProgTrend) => x.area))).sort(), [filtered])
 
+  // Todas las semanas del rango (independiente del filtro de área), y numeración estable Sem 1, 2, 3...
+  const allWeeks = useMemo(() => Array.from<string>(new Set(filtered.map((m: ProgTrend) => getWeekKey(m.fecha)))).sort(), [filtered])
+  const weekNumberMap = useMemo(() => Object.fromEntries(allWeeks.map((w: string, i: number) => [w, i + 1])) as Record<string, number>, [allWeeks])
+
+  // Init semanas visibles (por defecto todas activas al cambiar el rango)
+  useEffect(() => {
+    setWeekVisible((prev: Record<string, boolean>) => {
+      const next: Record<string, boolean> = {}
+      allWeeks.forEach((w: string) => { next[w] = prev[w] === undefined ? true : prev[w] })
+      return next
+    })
+  }, [allWeeks])
+
+  const visibleWeeks = useMemo(() => allWeeks.filter((w: string) => weekVisible[w] !== false), [allWeeks, weekVisible])
+
   // KPIs
   const totalPersonas = useMemo(() => filtered.reduce((a: number, x: ProgTrend) => a + x.total, 0), [filtered])
   const totalDias = useMemo(() => Array.from<string>(new Set(filtered.map((x: ProgTrend) => x.fecha))).length, [filtered])
@@ -186,33 +205,53 @@ export default function TendenciasPanel({ refresh }: Props) {
     return Object.entries(byAg).filter(([, v]: [string, number]) => v > 0).sort((a: [string,number], b: [string,number]) => b[1] - a[1])
   }, [visibleFilteredDetails])
 
-  // Cuadro semanal por paradero (respeta el filtro de área seleccionada)
+  // Días con datos por semana (para calcular promedios diarios)
+  const daysPerWeek = useMemo(() => {
+    const map: Record<string, Set<string>> = {}
+    visibleFilteredDetails.forEach((m: ProgDetail) => {
+      const wk = getWeekKey(m.fecha)
+      if (weekVisible[wk] === false) return
+      if (!map[wk]) map[wk] = new Set<string>()
+      map[wk].add(m.fecha)
+    })
+    const result: Record<string, number> = {}
+    Object.entries(map).forEach(([wk, s]: [string, Set<string>]) => { result[wk] = s.size })
+    return result
+  }, [visibleFilteredDetails, weekVisible])
+
+  // Cuadro semanal por paradero — muestra PROMEDIO DIARIO de cada semana, no el total (respeta filtro de área y semanas)
   const weeklyParaderos = useMemo(() => {
-    const weeks: string[] = Array.from<string>(new Set(visibleFilteredDetails.map((m: ProgDetail) => getWeekKey(m.fecha)))).sort()
     const byParWeek: Record<string, Record<string, number>> = {}
     visibleFilteredDetails.forEach((m: ProgDetail) => {
       const wk = getWeekKey(m.fecha)
+      if (weekVisible[wk] === false) return
       Object.entries(m.parData).forEach(([p, v]: [string, number]) => {
         if (!byParWeek[p]) byParWeek[p] = {}
         byParWeek[p][wk] = (byParWeek[p][wk] || 0) + v
       })
     })
+    const totalDays = visibleWeeks.reduce((a: number, w: string) => a + (daysPerWeek[w] || 0), 0)
     const rows = Object.entries(byParWeek)
-      .map(([p, wm]: [string, Record<string, number>]) => ({
-        nombre: p,
-        weekMap: wm,
-        total: (Object.values(wm) as number[]).reduce((a: number, b: number) => a + b, 0),
-      }))
+      .map(([p, rawWm]: [string, Record<string, number>]) => {
+        const weekMap: Record<string, number> = {}
+        let rawTotal = 0
+        Object.entries(rawWm).forEach(([wk, v]: [string, number]) => {
+          rawTotal += v
+          const days = daysPerWeek[wk] || 0
+          weekMap[wk] = days > 0 ? Math.round(v / days) : 0
+        })
+        return { nombre: p, weekMap, total: totalDays > 0 ? Math.round(rawTotal / totalDays) : 0 }
+      })
       .sort((a, b) => b.total - a.total)
-    return { weeks, rows }
-  }, [visibleFilteredDetails])
+    return { weeks: visibleWeeks, rows }
+  }, [visibleFilteredDetails, weekVisible, visibleWeeks, daysPerWeek])
 
-  // Cuadro semanal por zona/agrupador (respeta el filtro de área seleccionada)
+  // Cuadro semanal por zona/agrupador — muestra PROMEDIO DIARIO de cada semana, no el total (respeta filtro de área y semanas)
   const weeklyZonas = useMemo(() => {
-    const weeks: string[] = Array.from<string>(new Set(visibleFilteredDetails.map((m: ProgDetail) => getWeekKey(m.fecha)))).sort()
     const byAgWeek: Record<string, Record<string, number>> = {}
     visibleFilteredDetails.forEach((m: ProgDetail) => {
       const wk = getWeekKey(m.fecha)
+      if (weekVisible[wk] === false) return
       ALLP.forEach(({ ag, p }: { ag: string; p: string }) => {
         const v = m.parData[p] || 0
         if (v === 0) return
@@ -220,40 +259,72 @@ export default function TendenciasPanel({ refresh }: Props) {
         byAgWeek[ag][wk] = (byAgWeek[ag][wk] || 0) + v
       })
     })
+    const totalDays = visibleWeeks.reduce((a: number, w: string) => a + (daysPerWeek[w] || 0), 0)
     const rows = Object.entries(byAgWeek)
-      .map(([ag, wm]: [string, Record<string, number>]) => ({
-        nombre: ag,
-        weekMap: wm,
-        total: (Object.values(wm) as number[]).reduce((a: number, b: number) => a + b, 0),
-      }))
+      .map(([ag, rawWm]: [string, Record<string, number>]) => {
+        const weekMap: Record<string, number> = {}
+        let rawTotal = 0
+        Object.entries(rawWm).forEach(([wk, v]: [string, number]) => {
+          rawTotal += v
+          const days = daysPerWeek[wk] || 0
+          weekMap[wk] = days > 0 ? Math.round(v / days) : 0
+        })
+        return { nombre: ag, weekMap, total: totalDays > 0 ? Math.round(rawTotal / totalDays) : 0 }
+      })
       .sort((a, b) => b.total - a.total)
-    return { weeks, rows }
-  }, [visibleFilteredDetails])
+    return { weeks: visibleWeeks, rows }
+  }, [visibleFilteredDetails, weekVisible, visibleWeeks, daysPerWeek])
 
   const maxPar = topParaderos[0]?.[1] || 1
   const maxAg = topAgrupadores[0]?.[1] || 1
 
   // Charts
   useEffect(() => {
-    const weeks: string[] = Array.from<string>(new Set(filtered.map((m: ProgTrend) => getWeekKey(m.fecha)))).sort()
+    const weeks: string[] = visibleWeeks
     const byAW: Record<string, Record<string, number>> = {}
-    areas.forEach((a: string) => { byAW[a] = {}; weeks.forEach((w: string) => { byAW[a][w] = 0 }) })
+    const daysAW: Record<string, Record<string, Set<string>>> = {}
+    areas.forEach((a: string) => {
+      byAW[a] = {}; daysAW[a] = {}
+      weeks.forEach((w: string) => { byAW[a][w] = 0; daysAW[a][w] = new Set<string>() })
+    })
     filtered.forEach((m: ProgTrend) => {
       const wk = getWeekKey(m.fecha)
-      if (byAW[m.area]) byAW[m.area][wk] = (byAW[m.area][wk] || 0) + m.total
+      if (weekVisible[wk] === false) return
+      if (byAW[m.area]) {
+        byAW[m.area][wk] = (byAW[m.area][wk] || 0) + m.total
+        daysAW[m.area][wk]?.add(m.fecha)
+      }
     })
-    const labels: string[] = weeks.map(fmtWeek)
+    const labels: string[] = weeks.map((w) => `Sem ${weekNumberMap[w]}`)
+    const weekDates: string[] = weeks.map(fmtWeek)
     const visAreas = areas.filter((a: string) => visible[a] !== false)
     const datasets = visAreas.map((a: string) => {
       const col = AREA_COLORS[areas.indexOf(a) % AREA_COLORS.length]
-      return { label: a, data: weeks.map((w) => byAW[a][w] || 0), borderColor: col, backgroundColor: col + '22', borderWidth: 2, pointRadius: 3, tension: 0.3, fill: false }
+      return {
+        label: a,
+        data: weeks.map((w) => {
+          const days = daysAW[a][w]?.size || 0
+          return days > 0 ? Math.round((byAW[a][w] || 0) / days) : 0
+        }),
+        borderColor: col, backgroundColor: col + '22', borderWidth: 2, pointRadius: 3, tension: 0.3, fill: false,
+      }
     })
     if (lineRef.current) {
       if (lineChart.current) lineChart.current.destroy()
       lineChart.current = new Chart(lineRef.current, {
         type: 'line',
         data: { labels, datasets: datasets as never },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } }, scales: { x: { grid: { color: '#f3f4f6' }, ticks: { font: { size: 10 }, color: '#9ca3af' } }, y: { grid: { color: '#f3f4f6' }, ticks: { font: { size: 10 }, color: '#9ca3af' }, beginAtZero: true } } },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              mode: 'index', intersect: false,
+              callbacks: { title: (items) => `Semana ${weekNumberMap[weeks[items[0].dataIndex]]} (${weekDates[items[0].dataIndex]}) — promedio diario` },
+            },
+          },
+          scales: { x: { grid: { color: '#f3f4f6' }, ticks: { font: { size: 10 }, color: '#9ca3af' } }, y: { grid: { color: '#f3f4f6' }, ticks: { font: { size: 10 }, color: '#9ca3af' }, beginAtZero: true } },
+        },
       })
     }
     const totByArea = areas.filter((a: string) => visible[a] !== false)
@@ -270,7 +341,7 @@ export default function TendenciasPanel({ refresh }: Props) {
         options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false }, ticks: { font: { size: 9 }, color: '#9ca3af' } }, y: { grid: { color: '#f3f4f6' }, ticks: { font: { size: 10 }, color: '#9ca3af' }, beginAtZero: true } } },
       })
     }
-  }, [all, tipo, desde, hasta, visible, filtered, areas])
+  }, [all, tipo, desde, hasta, visible, filtered, areas, visibleWeeks, weekVisible, weekNumberMap])
 
   const tipoLabel = tipo === 'SALIDA' ? 'Salida' : tipo === 'RECOJO' ? 'Ingreso' : 'Salida + Ingreso'
   const tipoColor = tipo === 'SALIDA' ? 'text-amber-600' : tipo === 'RECOJO' ? 'text-blue-600' : 'text-green-600'
@@ -349,9 +420,46 @@ export default function TendenciasPanel({ refresh }: Props) {
         </div>
       )}
 
+      {/* Semanas visibles */}
+      {allWeeks.length > 0 && (
+        <div className="card mb-3">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Semanas visibles</p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setWeekVisible(Object.fromEntries(allWeeks.map((w: string) => [w, true])))}
+                className="text-xs font-semibold text-primary-600 hover:underline"
+              >
+                Todas
+              </button>
+              <button
+                onClick={() => setWeekVisible(Object.fromEntries(allWeeks.map((w: string) => [w, false])))}
+                className="text-xs font-semibold text-gray-400 hover:underline"
+              >
+                Ninguna
+              </button>
+            </div>
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            {allWeeks.map((w: string) => {
+              const off = weekVisible[w] === false
+              return (
+                <button key={w} onClick={() => toggleWeek(w)} title={fmtWeek(w)}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border-2 transition-opacity ${off ? 'opacity-30 border-gray-300 text-gray-400 bg-white' : 'opacity-100 border-primary-500 text-primary-600 bg-primary-50'}`}
+                >
+                  Sem {weekNumberMap[w]}
+                  <span className="text-gray-400 font-normal">({fmtWeek(w)})</span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Gráfico línea */}
       <div className="card mb-3">
-        <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Personas por semana</p>
+        <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Personas por semana (promedio diario)</p>
+
         {areas.length === 0 ? (
           <p className="text-center py-10 text-gray-400 text-sm">Sin datos en el período seleccionado</p>
         ) : (
@@ -457,16 +565,16 @@ export default function TendenciasPanel({ refresh }: Props) {
       {/* Cuadro semanal: Paraderos */}
       {weeklyParaderos.weeks.length > 0 && (
         <div className="card mb-3">
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">📍 Paraderos por semana</p>
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">📍 Paraderos por semana (promedio diario)</p>
           <div className="overflow-x-auto">
             <table className="w-full text-xs border-collapse">
               <thead>
                 <tr>
                   <th className="text-left py-1.5 pr-3 text-gray-400 font-semibold sticky left-0 bg-white whitespace-nowrap">Paradero</th>
                   {weeklyParaderos.weeks.map((w: string) => (
-                    <th key={w} className="text-right py-1.5 px-2 text-gray-400 font-semibold whitespace-nowrap">{fmtWeek(w)}</th>
+                    <th key={w} className="text-right py-1.5 px-2 text-gray-400 font-semibold whitespace-nowrap" title={fmtWeek(w)}>Sem {weekNumberMap[w]}</th>
                   ))}
-                  <th className="text-right py-1.5 pl-3 text-gray-700 font-bold whitespace-nowrap">Total</th>
+                  <th className="text-right py-1.5 pl-3 text-gray-700 font-bold whitespace-nowrap">Prom. diario</th>
                 </tr>
               </thead>
               <tbody>
@@ -488,16 +596,16 @@ export default function TendenciasPanel({ refresh }: Props) {
       {/* Cuadro semanal: Zonas */}
       {weeklyZonas.weeks.length > 0 && (
         <div className="card mb-3">
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">🏘 Zonas por semana</p>
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">🏘 Zonas por semana (promedio diario)</p>
           <div className="overflow-x-auto">
             <table className="w-full text-xs border-collapse">
               <thead>
                 <tr>
                   <th className="text-left py-1.5 pr-3 text-gray-400 font-semibold sticky left-0 bg-white whitespace-nowrap">Zona</th>
                   {weeklyZonas.weeks.map((w: string) => (
-                    <th key={w} className="text-right py-1.5 px-2 text-gray-400 font-semibold whitespace-nowrap">{fmtWeek(w)}</th>
+                    <th key={w} className="text-right py-1.5 px-2 text-gray-400 font-semibold whitespace-nowrap" title={fmtWeek(w)}>Sem {weekNumberMap[w]}</th>
                   ))}
-                  <th className="text-right py-1.5 pl-3 text-gray-700 font-bold whitespace-nowrap">Total</th>
+                  <th className="text-right py-1.5 pl-3 text-gray-700 font-bold whitespace-nowrap">Prom. diario</th>
                 </tr>
               </thead>
               <tbody>
