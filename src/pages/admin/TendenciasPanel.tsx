@@ -13,6 +13,7 @@ import {
   Legend,
   Filler,
 } from 'chart.js'
+import * as XLSX from 'xlsx-js-style'
 import { AREA_COLORS, ALLP, AGK } from '../../utils/constants'
 import { getAllProgramaciones, getProgramacionDetalle } from '../../lib/api'
 
@@ -55,6 +56,42 @@ function getISOWeek(wk: string) {
   date.setUTCDate(date.getUTCDate() + 4 - dayNum)
   const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1))
   return Math.ceil((((date.getTime() - yearStart.getTime()) / 86400000) + 1) / 7)
+}
+
+// Exporta un cuadro semanal (paraderos o zonas) a Excel, con Sem N + fecha en el encabezado
+function exportWeeklyExcel(
+  filename: string,
+  sheetName: string,
+  nombreLabel: string,
+  weeks: string[],
+  weekNumberMap: Record<string, number>,
+  rows: { nombre: string; weekMap: Record<string, number>; total: number }[]
+) {
+  if (rows.length === 0) { alert('Sin datos para exportar'); return }
+  const header = [nombreLabel, ...weeks.map((w) => `Sem ${weekNumberMap[w]} (${fmtWeek(w)})`), 'Prom. diario']
+  const data = rows.map((r) => [r.nombre, ...weeks.map((w) => r.weekMap[w] || 0), r.total])
+  const ws = XLSX.utils.aoa_to_sheet([header, ...data])
+
+  const headerStyle = {
+    font: { bold: true, color: { rgb: 'FFFFFF' } },
+    fill: { fgColor: { rgb: '1A7A3C' } },
+    alignment: { horizontal: 'center', vertical: 'center' },
+  }
+  header.forEach((_, c) => {
+    const cell = ws[XLSX.utils.encode_cell({ r: 0, c })]
+    if (cell) cell.s = headerStyle
+  })
+  data.forEach((_, r) => {
+    const cell = ws[XLSX.utils.encode_cell({ r: r + 1, c: header.length - 1 })]
+    if (cell) cell.s = { font: { bold: true } }
+  })
+
+  ws['!cols'] = [{ wch: 28 }, ...weeks.map(() => ({ wch: 14 })), { wch: 14 }]
+  ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: data.length, c: header.length - 1 } })
+
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, sheetName)
+  XLSX.writeFile(wb, filename)
 }
 
 export default function TendenciasPanel({ refresh }: Props) {
@@ -119,9 +156,14 @@ export default function TendenciasPanel({ refresh }: Props) {
     let active = true
     setLoadingDetail(true)
     async function cargarDetalles() {
-      try {
-        const enriched: ProgDetail[] = await Promise.all(
-          all.map(async (p: ProgTrend) => {
+      const BATCH_SIZE = 15
+      const enriched: ProgDetail[] = []
+      let fallos = 0
+      for (let i = 0; i < all.length; i += BATCH_SIZE) {
+        if (!active) return
+        const lote = all.slice(i, i + BATCH_SIZE)
+        const resultados = await Promise.allSettled(
+          lote.map(async (p: ProgTrend) => {
             const detalle = await getProgramacionDetalle(p.id)
             const parData: Record<string, number> = {}
             detalle.forEach((row: any) => {
@@ -130,14 +172,15 @@ export default function TendenciasPanel({ refresh }: Props) {
             return { ...p, parData }
           })
         )
-        if (!active) return
-        setDetails(enriched)
-      } catch (e) {
-        console.error(e)
-      } finally {
-        if (!active) return
-        setLoadingDetail(false)
+        resultados.forEach((r) => {
+          if (r.status === 'fulfilled') enriched.push(r.value)
+          else fallos++
+        })
       }
+      if (!active) return
+      if (fallos > 0) console.error(`${fallos} programaciones no se pudieron cargar (detalle por paradero)`)
+      setDetails(enriched)
+      setLoadingDetail(false)
     }
     void cargarDetalles()
     return () => { active = false }
@@ -574,7 +617,19 @@ export default function TendenciasPanel({ refresh }: Props) {
       {/* Cuadro semanal: Paraderos */}
       {weeklyParaderos.weeks.length > 0 && (
         <div className="card mb-3">
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">📍 Paraderos por semana (promedio diario)</p>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">📍 Paraderos por semana (promedio diario)</p>
+            <button
+              onClick={() => exportWeeklyExcel(
+                `paraderos_por_semana_${new Date().toISOString().slice(0, 10)}.xlsx`,
+                'Paraderos por semana', 'Paradero',
+                weeklyParaderos.weeks, weekNumberMap, weeklyParaderos.rows
+              )}
+              className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold border rounded-lg border-gray-300 bg-white text-gray-600 hover:border-green-500 hover:text-green-600"
+            >
+              ⬇ Excel
+            </button>
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-xs border-collapse">
               <thead>
@@ -605,7 +660,19 @@ export default function TendenciasPanel({ refresh }: Props) {
       {/* Cuadro semanal: Zonas */}
       {weeklyZonas.weeks.length > 0 && (
         <div className="card mb-3">
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">🏘 Zonas por semana (promedio diario)</p>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">🏘 Zonas por semana (promedio diario)</p>
+            <button
+              onClick={() => exportWeeklyExcel(
+                `zonas_por_semana_${new Date().toISOString().slice(0, 10)}.xlsx`,
+                'Zonas por semana', 'Zona',
+                weeklyZonas.weeks, weekNumberMap, weeklyZonas.rows
+              )}
+              className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold border rounded-lg border-gray-300 bg-white text-gray-600 hover:border-green-500 hover:text-green-600"
+            >
+              ⬇ Excel
+            </button>
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-xs border-collapse">
               <thead>
