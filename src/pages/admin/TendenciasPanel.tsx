@@ -73,9 +73,13 @@ function exportWeeklyExcel(
 ) {
   if (rows.length === 0) { alert('Sin datos para exportar'); return }
   const hasZona = rows.some((r) => r.zona !== undefined)
-  const header = [nombreLabel, ...(hasZona ? ['Zona'] : []), ...weeks.map((w) => `Sem ${weekNumberMap[w]} (${fmtWeek(w)})`), 'Prom. diario']
-  const data = rows.map((r) => [r.nombre, ...(hasZona ? [r.zona || ''] : []), ...weeks.map((w) => r.weekMap[w] || 0), r.total])
-  const ws = XLSX.utils.aoa_to_sheet([header, ...data])
+  const header = [nombreLabel, ...(hasZona ? ['Zona'] : []), ...weeks.map((w) => `Sem ${weekNumberMap[w]} (${fmtWeek(w)})`)]
+  const data = rows.map((r) => [r.nombre, ...(hasZona ? [r.zona || ''] : []), ...weeks.map((w) => r.weekMap[w] || 0)])
+  const totalsRow = [
+    'Total semana', ...(hasZona ? [''] : []),
+    ...weeks.map((w) => rows.reduce((a, r) => a + (r.weekMap[w] || 0), 0)),
+  ]
+  const ws = XLSX.utils.aoa_to_sheet([header, ...data, totalsRow])
 
   const headerStyle = {
     font: { bold: true, color: { rgb: 'FFFFFF' } },
@@ -86,13 +90,14 @@ function exportWeeklyExcel(
     const cell = ws[XLSX.utils.encode_cell({ r: 0, c })]
     if (cell) cell.s = headerStyle
   })
-  data.forEach((_, r) => {
-    const cell = ws[XLSX.utils.encode_cell({ r: r + 1, c: header.length - 1 })]
-    if (cell) cell.s = { font: { bold: true } }
+  const totalsRowIdx = data.length + 1
+  totalsRow.forEach((_, c) => {
+    const cell = ws[XLSX.utils.encode_cell({ r: totalsRowIdx, c })]
+    if (cell) cell.s = { font: { bold: true }, fill: { fgColor: { rgb: 'E5E7EB' } } }
   })
 
-  ws['!cols'] = [{ wch: 28 }, ...(hasZona ? [{ wch: 18 }] : []), ...weeks.map(() => ({ wch: 14 })), { wch: 14 }]
-  ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: data.length, c: header.length - 1 } })
+  ws['!cols'] = [{ wch: 28 }, ...(hasZona ? [{ wch: 18 }] : []), ...weeks.map(() => ({ wch: 14 }))]
+  ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: totalsRowIdx, c: header.length - 1 } })
 
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, sheetName)
@@ -642,7 +647,6 @@ export default function TendenciasPanel({ refresh }: Props) {
                   {weeklyParaderos.weeks.map((w: string) => (
                     <th key={w} className="text-right py-2 px-2 text-gray-500 font-bold whitespace-nowrap" title={fmtWeek(w)}>Sem {weekNumberMap[w]}</th>
                   ))}
-                  <th className="text-right py-2 pl-3 pr-2.5 text-gray-700 font-extrabold whitespace-nowrap">Prom. diario</th>
                 </tr>
               </thead>
               <tbody>
@@ -663,11 +667,21 @@ export default function TendenciasPanel({ refresh }: Props) {
                       {weeklyParaderos.weeks.map((w: string) => (
                         <td key={w} className="text-right py-1.5 px-2 text-gray-600">{(row.weekMap[w] || 0).toLocaleString()}</td>
                       ))}
-                      <td className="text-right py-1.5 pl-3 pr-2.5 font-bold text-gray-800">{row.total.toLocaleString()}</td>
                     </tr>
                   )
                 })}
               </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-gray-300 bg-gray-50">
+                  <td className="text-left py-2 pr-3 pl-2.5 font-extrabold text-gray-700 sticky left-0 bg-gray-50 whitespace-nowrap">Total semana</td>
+                  {weeklyParaderos.weeks.map((w: string) => {
+                    const suma = weeklyParaderos.rows.reduce((a: number, r) => a + (r.weekMap[w] || 0), 0)
+                    return (
+                      <td key={w} className="text-right py-2 px-2 font-extrabold text-gray-800">{suma.toLocaleString()}</td>
+                    )
+                  })}
+                </tr>
+              </tfoot>
             </table>
           </div>
         </div>
@@ -697,7 +711,6 @@ export default function TendenciasPanel({ refresh }: Props) {
                   {weeklyZonas.weeks.map((w: string) => (
                     <th key={w} className="text-right py-2 px-2 text-gray-500 font-bold whitespace-nowrap" title={fmtWeek(w)}>Sem {weekNumberMap[w]}</th>
                   ))}
-                  <th className="text-right py-2 pl-3 pr-2.5 text-gray-700 font-extrabold whitespace-nowrap">Prom. diario</th>
                 </tr>
               </thead>
               <tbody>
@@ -715,11 +728,21 @@ export default function TendenciasPanel({ refresh }: Props) {
                       {weeklyZonas.weeks.map((w: string) => (
                         <td key={w} className="text-right py-1.5 px-2 text-gray-600">{(row.weekMap[w] || 0).toLocaleString()}</td>
                       ))}
-                      <td className="text-right py-1.5 pl-3 pr-2.5 font-bold text-gray-800">{row.total.toLocaleString()}</td>
                     </tr>
                   )
                 })}
               </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-gray-300 bg-gray-50">
+                  <td className="text-left py-2 pr-3 pl-2.5 font-extrabold text-gray-700 sticky left-0 bg-gray-50 whitespace-nowrap">Total semana</td>
+                  {weeklyZonas.weeks.map((w: string) => {
+                    const suma = weeklyZonas.rows.reduce((a: number, r) => a + (r.weekMap[w] || 0), 0)
+                    return (
+                      <td key={w} className="text-right py-2 px-2 font-extrabold text-gray-800">{suma.toLocaleString()}</td>
+                    )
+                  })}
+                </tr>
+              </tfoot>
             </table>
           </div>
         </div>
