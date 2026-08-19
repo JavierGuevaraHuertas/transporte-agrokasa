@@ -47,6 +47,15 @@ function fmtWeek(wk: string) {
   const d = new Date(wk + 'T00:00:00')
   return `${d.getDate()}/${d.getMonth() + 1}`
 }
+// Número de semana ISO-8601 (el mismo que usan los calendarios: la semana actual, p.ej. 34)
+function getISOWeek(wk: string) {
+  const d = new Date(wk + 'T00:00:00')
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
+  const dayNum = date.getUTCDay() || 7
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum)
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1))
+  return Math.ceil((((date.getTime() - yearStart.getTime()) / 86400000) + 1) / 7)
+}
 
 export default function TendenciasPanel({ refresh }: Props) {
   const [tipo, setTipo] = useState('ALL')
@@ -158,7 +167,7 @@ export default function TendenciasPanel({ refresh }: Props) {
 
   // Todas las semanas del rango (independiente del filtro de área), y numeración estable Sem 1, 2, 3...
   const allWeeks = useMemo(() => Array.from<string>(new Set(filtered.map((m: ProgTrend) => getWeekKey(m.fecha)))).sort(), [filtered])
-  const weekNumberMap = useMemo(() => Object.fromEntries(allWeeks.map((w: string, i: number) => [w, i + 1])) as Record<string, number>, [allWeeks])
+  const weekNumberMap = useMemo(() => Object.fromEntries(allWeeks.map((w: string) => [w, getISOWeek(w)])) as Record<string, number>, [allWeeks])
 
   // Init semanas visibles (por defecto todas activas al cambiar el rango)
   useEffect(() => {
