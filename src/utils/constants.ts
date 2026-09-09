@@ -71,6 +71,7 @@ export const HOR: Record<string, Horario[]> = {
   { id: 'Rec.06:30-15:30', label: 'De 06:30 a 15:30' },
   { id: 'Rec.07:00-16:00', label: 'De 07:00 a 16:00' },
   { id: 'Rec.07:30-16:30', label: 'De 07:30 a 16:30' },
+  { id: 'Rec.08:00-17:00', label: 'De 08:00 a 17:00' },
   { id: 'Rec.14:00-23:00', label: 'De 14:00 a 23:00' },
   { id: 'Rec.17:00-02:00', label: 'De 17:00 a 02:00' },
 ],
