@@ -43,6 +43,7 @@ export const RUTAS: Record<string, FilaRuta[]> = {
     { l: 12, c: 2 },
     { l: 12, c: 1 },
     { l: 12, c: 3 },
+    { l: 12, c: 4 },
     { l: 11, c: 2 },
     { l: 11, c: 3 },
     { l: 11, c: 4 },
