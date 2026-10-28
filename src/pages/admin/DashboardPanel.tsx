@@ -49,6 +49,22 @@ export default function DashboardPanel({ refresh, onDiaChange: _onDiaChange, sho
   const [modalTipo, setModalTipo] = useState<'SALIDA' | 'RECOJO' | null>(null)
   const [all, setAll] = useState<ProgUI[]>([])
   const [loading, setLoading] = useState(false)
+  const [syncTick, setSyncTick] = useState(0)
+
+  // Actualizar los datos cuando otro usuario modifica una programación.
+  useEffect(() => {
+    const refreshDashboard = () => setSyncTick((v) => v + 1)
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') refreshDashboard()
+    }, 15000)
+    window.addEventListener('focus', refreshDashboard)
+    document.addEventListener('visibilitychange', refreshDashboard)
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener('focus', refreshDashboard)
+      document.removeEventListener('visibilitychange', refreshDashboard)
+    }
+  }, [])
 
   useEffect(() => {
     getAllUsuarios()
@@ -121,7 +137,7 @@ export default function DashboardPanel({ refresh, onDiaChange: _onDiaChange, sho
     void cargarDashboard()
 
     return () => { active = false }
-  }, [dateSalida, dateRecojo, refresh])
+  }, [dateSalida, dateRecojo, refresh, syncTick])
 
   const sal = useMemo(
     () => all.filter((x) => x.tipo === 'SALIDA').reduce((a, x) => a + (x.total || 0), 0),
