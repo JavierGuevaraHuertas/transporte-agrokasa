@@ -67,6 +67,7 @@ export const RUTAS: Record<string, FilaRuta[]> = {
 }
 export const HOR: Record<string, Horario[]> = {
   RECOJO: [
+  { id: 'Rec.04:00-13:00', label: 'De 04:00 a 13:00' },
   { id: 'Rec.05:00-14:00', label: 'De 05:00 a 14:00' },
   { id: 'Rec.06:00-15:00', label: 'De 06:00 a 15:00' },
   { id: 'Rec.06:30-15:30', label: 'De 06:30 a 15:30' },
